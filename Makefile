@@ -44,3 +44,13 @@ clean:
 .PHONY: repl
 repl: hasch
 	@ ./hasch
+
+.PHONY: benchmark
+benchmark: hasch
+	cd examples/the-little-schemer && \
+		hyperfine -m 100 --warmup 10 \
+			'gosch run-all.scm' \
+			'scheme --quiet < run-all.scm' \
+			'loco run-all.scm' \
+			'../../../rusch/rusch run-all.scm' \
+			'../../hasch run-all.scm'

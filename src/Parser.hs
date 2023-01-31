@@ -68,7 +68,7 @@ parseQuoted r = do
 parseWord :: Reader r => r -> ParsingResult
 parseWord r = do
   result <- readWord r ""
-  return $ Ok $ Just $ maybeBool result
+  return $ Ok $ maybeTransform [maybeBool, maybeInt, maybeFloat, Just . Symbol] result
 
 readWord :: Reader r => r -> String -> IO String
 readWord r acc = do
@@ -80,22 +80,27 @@ readWord r acc = do
       readWord r (c : acc)
     Nothing -> return $ reverse acc
 
-maybeBool :: String -> Sexpr
-maybeBool "#t" = Bool True
-maybeBool "#f" = Bool False
-maybeBool s = maybeInt s
+maybeTransform :: [String -> Maybe Sexpr] -> String -> Maybe Sexpr
+maybeTransform (f : fx) x =
+  case f x of
+    Just v -> Just v
+    Nothing -> maybeTransform fx x
+maybeTransform [] x = error "unreachable"
 
-maybeInt :: String -> Sexpr
-maybeInt s =
-  case (readMaybe s :: Maybe Int) of
-    Just num -> Int num
-    Nothing -> maybeFloat s
+maybeBool :: String -> Maybe Sexpr
+maybeBool "#t" = Just $ Bool True
+maybeBool "#f" = Just $ Bool False
+maybeBool s = Nothing
 
-maybeFloat :: String -> Sexpr
-maybeFloat s =
-  case (readMaybe s :: Maybe Float) of
-    Just num -> Float num
-    Nothing -> Symbol s
+(>&) :: Maybe t -> (t -> a) -> Maybe a
+(>&) (Just v) f = Just $ f v
+(>&) Nothing _ = Nothing
+
+maybeInt :: String -> Maybe Sexpr
+maybeInt s = (readMaybe s :: Maybe Int) >& Int
+
+maybeFloat :: String -> Maybe Sexpr
+maybeFloat s = (readMaybe s :: Maybe Float) >& Float
 
 isWordEnd :: Char -> Bool
 isWordEnd ch =
