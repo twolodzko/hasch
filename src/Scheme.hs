@@ -152,8 +152,8 @@ letImpl _ _ _ =
 
 letInit :: [Sexpr] -> Env -> EnvRef Sexpr -> IO (Result Sexpr)
 letInit (List (Symbol key : [val]) : xs) evalEnv saveEnv =
-  eval val evalEnv ?> \s -> do
-    Envir.insert key s saveEnv
+  eval val evalEnv ?> \x -> do
+    Envir.insert key x saveEnv
     letInit xs evalEnv saveEnv
 letInit (sexpr : _) _ _ =
   return $ Err $ notASymbol sexpr
