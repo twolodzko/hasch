@@ -1,7 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Redundant compare" #-}
-
 module Scheme (root) where
 
 import Control.Exception (evaluate, try)
@@ -110,15 +109,15 @@ setBang args _ =
   return $ Err $ wrongArgNum args
 
 lambda :: [Sexpr] -> Env -> IO (Result Sexpr)
-lambda (List vars : body) parentEnv =
+lambda (List vars : body) parentEnv = do
   return $ case extractVars vars [] of
-    Ok vars -> Ok $
-      Func $
-        \args env -> do
-          local <- Envir.branch parentEnv
-          lambdaInit vars args env local
-          evalEachAnd (Ok . lastOrNil) body local
+    Ok vars -> Ok $ Func $ go vars
     Err msg -> Err msg
+  where
+    go vars args env = do
+      local <- Envir.branch parentEnv
+      lambdaInit vars args env local
+      evalEachAnd (Ok . lastOrNil) body local
 lambda (sexpr : _) _ = return $ Err $ wrongArg sexpr
 lambda args _ = return $ Err $ wrongArgNum args
 
@@ -163,13 +162,10 @@ letInit [] _ _ =
   return $ Ok Nil
 
 display :: [Sexpr] -> Env -> IO (Result Sexpr)
-display args env = do
-  result <- evalEach args env []
-  case result of
-    Ok l -> do
-      printf "%s\n" $ toString l
-      return $ Ok Nil
-    Err msg -> return $ Err msg
+display args env =
+  evalEach args env ?> \x -> do
+    printf "%s\n" $ toString x
+    return $ Ok Nil
 
 evalFn :: [Sexpr] -> Env -> IO (Result Sexpr)
 evalFn [sexpr] env =
@@ -273,26 +269,26 @@ equal = evalEachAnd $ Ok . Bool . allEqual
 
 numReduce :: (Sexpr -> Sexpr -> Sexpr) -> Sexpr -> [Sexpr] -> Env -> IO (Result Sexpr)
 numReduce _ init [] _ = return $ Ok init
-numReduce op init [x] env = numReduceImpl op [x] init env
+numReduce op init [x] env = numReduceImpl op [x] env init
 numReduce op _ (x : xs) env =
-  eval x env ?> \acc ->
-    numReduceImpl op xs acc env
+  eval x env ?> numReduceImpl op xs env
 
-numReduceImpl :: (Sexpr -> Sexpr -> Sexpr) -> [Sexpr] -> Sexpr -> Env -> IO (Result Sexpr)
-numReduceImpl op (x : xs) acc env =
+numReduceImpl :: (Sexpr -> Sexpr -> Sexpr) -> [Sexpr] -> Env -> Sexpr -> IO (Result Sexpr)
+numReduceImpl op (x : xs) env acc =
   eval x env ?> \v -> do
+    try (evaluate $ op acc v) :: IO (Either NaN Sexpr)
     result <- try (evaluate $ op acc v) :: IO (Either NaN Sexpr)
     case result of
       Left err -> return $ Err $ show err
-      Right new -> numReduceImpl op xs new env
-numReduceImpl _ [] acc _ = return $ Ok acc
+      Right new -> numReduceImpl op xs env new
+numReduceImpl _ [] _ acc = return $ Ok acc
 
 numCompare :: (Sexpr -> Sexpr -> Bool) -> [Sexpr] -> Env -> IO (Result Sexpr)
 numCompare _ [] _ = return $ Ok $ Bool True
 numCompare _ [x] env =
   eval x env ?> \_ -> return $ Ok $ Bool True
 numCompare op (x : xs) env =
-  eval x env ?> \acc -> go xs acc
+  eval x env ?> go xs
   where
     go (x : xs) acc =
       eval x env ?> \v -> do
@@ -323,11 +319,8 @@ oneArg f [sexpr] = f sexpr
 oneArg _ args = Err $ wrongArgNum args
 
 evalEachAnd :: ([Sexpr] -> Result Sexpr) -> [Sexpr] -> Env -> IO (Result Sexpr)
-evalEachAnd f args env = do
-  result <- evalEach args env []
-  return $ case result of
-    Ok v -> f v
-    Err err -> Err err
+evalEachAnd f args env =
+  evalEach args env ?> (return . f)
 
 wrongArgNum :: [Sexpr] -> String
 wrongArgNum args = printf "wrong number of arguments: %d" $ length args

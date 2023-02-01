@@ -4,7 +4,7 @@ import Envir (EnvRef, lookup)
 import FileReader (new)
 import Parser (parse)
 import Text.Printf (printf)
-import Types (Result (Err, Ok), Sexpr (..))
+import Types (Result (Err, Ok), Sexpr (..), (?>))
 
 type EvalResult = IO (Result Sexpr)
 
@@ -40,14 +40,15 @@ evalList (x : xs) env = do
     Err msg ->
       return $ Err msg
 
-evalEach :: [Sexpr] -> Env -> [Sexpr] -> IO (Result [Sexpr])
-evalEach (x : xs) env acc = do
-  result <- eval x env
-  case result of
-    Ok v -> evalEach xs env (v : acc)
-    Err msg -> return $ Err msg
-evalEach [] _ acc =
-  return $ Ok $ reverse acc
+evalEach :: [Sexpr] -> Env -> IO (Result [Sexpr])
+evalEach args env =
+  go args []
+  where
+    go (x : xs) acc =
+      eval x env ?> \v ->
+        go xs (v : acc)
+    go [] acc =
+      return $ Ok $ reverse acc
 
 evalFile :: String -> Env -> IO (Result Sexpr)
 evalFile name env = do
@@ -57,10 +58,7 @@ evalFile name env = do
     go reader prev = do
       sexpr <- parse reader
       case sexpr of
-        Ok (Just sexpr) -> do
-          result <- eval sexpr env
-          case result of
-            Ok this -> go reader this
-            Err msg -> return $ Err msg
+        Ok (Just sexpr) ->
+          eval sexpr env ?> go reader
         Ok Nothing -> return $ Ok prev
         Err msg -> return $ Err msg

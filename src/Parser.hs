@@ -92,15 +92,11 @@ maybeBool "#t" = Just $ Bool True
 maybeBool "#f" = Just $ Bool False
 maybeBool s = Nothing
 
-(>&) :: Maybe t -> (t -> a) -> Maybe a
-(>&) (Just v) f = Just $ f v
-(>&) Nothing _ = Nothing
-
 maybeInt :: String -> Maybe Sexpr
-maybeInt s = (readMaybe s :: Maybe Int) >& Int
+maybeInt s = Int <$> (readMaybe s :: Maybe Int)
 
 maybeFloat :: String -> Maybe Sexpr
-maybeFloat s = (readMaybe s :: Maybe Float) >& Float
+maybeFloat s = Float <$> (readMaybe s :: Maybe Float)
 
 isWordEnd :: Char -> Bool
 isWordEnd ch =
