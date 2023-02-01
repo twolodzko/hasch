@@ -79,10 +79,11 @@ cons (lhs : [rhs]) env = do
   left <- eval lhs env
   left ?> \l -> do
     right <- eval rhs env
-    right ?> go l
+    right ?> \r ->
+      return $ Ok $ List (l : list r)
   where
-    go l (List r) = return $ Ok $ List $ l : r
-    go l r = return $ Ok $ List [l, r]
+    list (List s) = s
+    list s = [s]
 cons args _ =
   return $ Err $ wrongArgNum args
 
