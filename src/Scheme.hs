@@ -112,10 +112,12 @@ setBang args _ =
 lambda :: [Sexpr] -> Env -> IO (Result Sexpr)
 lambda (List vars : body) parentEnv =
   return $ case extractVars vars [] of
-    Ok vars -> Ok $ Func $ \args callEnv -> do
-      local <- Envir.branch parentEnv
-      lambdaInit vars args callEnv local
-      evalEachAnd (Ok . lastOrNil) body local
+    Ok vars -> Ok $
+      Func $
+        \args env -> do
+          local <- Envir.branch parentEnv
+          lambdaInit vars args env local
+          evalEachAnd (Ok . lastOrNil) body local
     Err msg -> Err msg
 lambda (sexpr : _) _ = return $ Err $ wrongArg sexpr
 lambda args _ = return $ Err $ wrongArgNum args
