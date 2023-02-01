@@ -12,7 +12,7 @@ import Test.HUnit
     Testable (test),
     assertEqual,
   )
-import Types (Result (Err, Ok), Sexpr (..))
+import Types (Result (Err, Ok), Sexpr (..), isErr)
 
 parseEval :: String -> Envir.EnvRef Sexpr -> IO (Result Sexpr)
 parseEval str env = do
@@ -49,6 +49,43 @@ setBangTest =
           "symbol has changed after set!"
           (Just $ Symbol "ok")
           result
+    )
+
+fiboTailRecursive :: Test
+fiboTailRecursive =
+  TestCase
+    ( do
+        env <- Scheme.root
+        let code =
+              "(define impl (lambda (it second first) \
+              \  (if (= it 0) first \
+              \      (impl (- it 1) (+ first second) second))))"
+        assert $ not . isErr <$> parseEval code env
+        assert $ not . isErr <$> parseEval "(define fibo (lambda (n) (impl n 1 0)))" env
+
+        result <- parseEval "(fibo 0)" env
+        assert $ Ok (Int 0) == result
+
+        result <- parseEval "(fibo 1)" env
+        assert $ Ok (Int 1) == result
+
+        result <- parseEval "(fibo 2)" env
+        assert $ Ok (Int 1) == result
+
+        result <- parseEval "(fibo 3)" env
+        assert $ Ok (Int 2) == result
+
+        result <- parseEval "(fibo 7)" env
+        assert $ Ok (Int 13) == result
+
+        result <- parseEval "(fibo 9)" env
+        assert $ Ok (Int 34) == result
+
+        result <- parseEval "(fibo 10)" env
+        assert $ Ok (Int 55) == result
+
+        -- just run and not throw stack overflow error
+        assert $ not . isErr <$> parseEval "(fibo 10000)" env
     )
 
 tests :: Test
@@ -246,5 +283,7 @@ tests =
       -- set!
       setBangTest,
       -- load
-      assertParseEval (Ok $ Int 321) "(load \"examples/simple.scm\")"
+      assertParseEval (Ok $ Int 321) "(load \"examples/simple.scm\")",
+      -- test tail recursion
+      fiboTailRecursive
     ]

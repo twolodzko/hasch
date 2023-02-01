@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module Types (Sexpr (..), Result (..), (?>)) where
+module Types (Sexpr (..), Result (..), (?>), isErr) where
 
 import Envir (EnvRef)
 import Text.Printf (FieldFormatter, PrintfArg, formatArg, printf)
@@ -56,3 +56,7 @@ x ?> f =
   where
     go f (Ok x) = f x
     go _ (Err msg) = return $ Err msg
+
+isErr :: Result t -> Bool
+isErr (Err _) = True
+isErr (Ok _) = False
