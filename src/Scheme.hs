@@ -75,11 +75,9 @@ cdr (List list) = Ok $ List $ tail list
 cdr sexpr = Err $ wrongArg sexpr
 
 cons :: [Sexpr] -> Env -> IO (Result Sexpr)
-cons (lhs : [rhs]) env = do
-  left <- eval lhs env
-  left ?> \l -> do
-    right <- eval rhs env
-    right ?> \r ->
+cons (lhs : [rhs]) env =
+  eval lhs env ?> \l ->
+    eval rhs env ?> \r ->
       return $ Ok $ List (l : list r)
   where
     list (List s) = s
@@ -88,9 +86,8 @@ cons args _ =
   return $ Err $ wrongArgNum args
 
 define :: [Sexpr] -> Env -> IO (Result Sexpr)
-define ((Symbol k) : [v]) env = do
-  result <- eval v env
-  result ?> \v -> do
+define ((Symbol k) : [v]) env =
+  eval v env ?> \v -> do
     Envir.insert k v env
     return $ Ok v
 define (k : [_]) _ =
@@ -102,9 +99,8 @@ setBang :: [Sexpr] -> Env -> IO (Result Sexpr)
 setBang ((Symbol k) : [v]) env = do
   result <- Envir.findEnv k env
   case result of
-    Just env -> do
-      result <- eval v env
-      result ?> \v -> do
+    Just env ->
+      eval v env ?> \v -> do
         Envir.insert k v env
         return $ Ok v
     Nothing -> return $ Err $ printf "%s was not defined" k
@@ -130,9 +126,8 @@ extractVars [] acc = Ok $ reverse acc
 extractVars (sexpr : _) _ = Err $ notASymbol sexpr
 
 lambdaInit :: [String] -> [Sexpr] -> Env -> EnvRef Sexpr -> IO (Result Sexpr)
-lambdaInit (v : vars) (a : args) evalEnv saveEnv = do
-  result <- eval a evalEnv
-  result ?> \x -> do
+lambdaInit (v : vars) (a : args) evalEnv saveEnv =
+  eval a evalEnv ?> \x -> do
     Envir.insert v x saveEnv
     lambdaInit vars args evalEnv saveEnv
 lambdaInit [] [] _ _ = return $ Ok Nil
@@ -147,9 +142,8 @@ letStarFn args env = do
   letImpl args local local
 
 letImpl :: [Sexpr] -> Env -> Env -> IO (Result Sexpr)
-letImpl (List list : body) evalEnv saveEnv = do
-  result <- letInit list evalEnv saveEnv
-  result ?> \_ ->
+letImpl (List list : body) evalEnv saveEnv =
+  letInit list evalEnv saveEnv ?> \_ ->
     (evalEachAnd $ Ok . lastOrNil) body saveEnv
 letImpl (sexpr : _) _ _ =
   return $ Err $ wrongArg sexpr
@@ -157,9 +151,8 @@ letImpl _ _ _ =
   return $ Err "invalid arguments"
 
 letInit :: [Sexpr] -> Env -> EnvRef Sexpr -> IO (Result Sexpr)
-letInit (List (Symbol key : [val]) : xs) evalEnv saveEnv = do
-  result <- eval val evalEnv
-  result ?> \s -> do
+letInit (List (Symbol key : [val]) : xs) evalEnv saveEnv =
+  eval val evalEnv ?> \s -> do
     Envir.insert key s saveEnv
     letInit xs evalEnv saveEnv
 letInit (sexpr : _) _ _ =
@@ -177,23 +170,21 @@ display args env = do
     Err msg -> return $ Err msg
 
 evalFn :: [Sexpr] -> Env -> IO (Result Sexpr)
-evalFn [sexpr] env = do
-  result <- eval sexpr env
-  result ?> \s -> eval s env
+evalFn [sexpr] env =
+  eval sexpr env ?> \x ->
+    eval x env
 
 ifFn :: [Sexpr] -> Env -> IO (Result Sexpr)
-ifFn (cond : ifTrue : [ifFalse]) env = do
-  result <- eval cond env
-  result ?> go
+ifFn (cond : ifTrue : [ifFalse]) env =
+  eval cond env ?> go
   where
     go c | isTrue c = eval ifTrue env
     go _ = eval ifFalse env
 ifFn args _ = return $ Err $ wrongArgNum args
 
 cond :: [Sexpr] -> Env -> IO (Result Sexpr)
-cond ((List (condition : body)) : xs) env = do
-  result <- eval condition env
-  result ?> go
+cond ((List (condition : body)) : xs) env =
+  eval condition env ?> go
   where
     go s | isTrue s =
       case body of
@@ -281,14 +272,13 @@ equal = evalEachAnd $ Ok . Bool . allEqual
 numReduce :: (Sexpr -> Sexpr -> Sexpr) -> Sexpr -> [Sexpr] -> Env -> IO (Result Sexpr)
 numReduce _ init [] _ = return $ Ok init
 numReduce op init [x] env = numReduceImpl op [x] init env
-numReduce op _ (x : xs) env = do
-  result <- eval x env
-  result ?> \acc -> numReduceImpl op xs acc env
+numReduce op _ (x : xs) env =
+  eval x env ?> \acc ->
+    numReduceImpl op xs acc env
 
 numReduceImpl :: (Sexpr -> Sexpr -> Sexpr) -> [Sexpr] -> Sexpr -> Env -> IO (Result Sexpr)
-numReduceImpl op (x : xs) acc env = do
-  this <- eval x env
-  this ?> \v -> do
+numReduceImpl op (x : xs) acc env =
+  eval x env ?> \v -> do
     result <- try (evaluate $ op acc v) :: IO (Either NaN Sexpr)
     case result of
       Left err -> return $ Err $ show err
@@ -297,16 +287,13 @@ numReduceImpl _ [] acc _ = return $ Ok acc
 
 numCompare :: (Sexpr -> Sexpr -> Bool) -> [Sexpr] -> Env -> IO (Result Sexpr)
 numCompare _ [] _ = return $ Ok $ Bool True
-numCompare _ [x] env = do
-  result <- eval x env
-  result ?> \_ -> return $ Ok $ Bool True
-numCompare op (x : xs) env = do
-  result <- eval x env
-  result ?> \v -> go xs v
+numCompare _ [x] env =
+  eval x env ?> \_ -> return $ Ok $ Bool True
+numCompare op (x : xs) env =
+  eval x env ?> \acc -> go xs acc
   where
-    go (x : xs) acc = do
-      this <- eval x env
-      this ?> \v -> do
+    go (x : xs) acc =
+      eval x env ?> \v -> do
         result <- try (evaluate $ op acc v) :: IO (Either NaN Bool)
         case result of
           Left err -> return $ Err $ show err
@@ -315,9 +302,8 @@ numCompare op (x : xs) env = do
     go [] acc = return $ Ok $ Bool True
 
 load :: [Sexpr] -> Env -> IO (Result Sexpr)
-load [arg] env = do
-  name <- eval arg env
-  name ?> go
+load [arg] env =
+  eval arg env ?> go
   where
     go (String name) = evalFile name env
     go sexpr = return $ Err $ wrongArg sexpr
@@ -326,9 +312,12 @@ load args _ = return $ Err $ wrongArgNum args
 toString :: [Sexpr] -> String
 toString = unwords . map show
 
-(?>) :: Result Sexpr -> (Sexpr -> IO (Result Sexpr)) -> IO (Result Sexpr)
-(?>) (Ok x) f = f x
-(?>) (Err msg) _ = return $ Err msg
+(?>) :: IO (Result Sexpr) -> (Sexpr -> IO (Result Sexpr)) -> IO (Result Sexpr)
+(?>) x f =
+  x >>= go f
+  where
+    go f (Ok x) = f x
+    go _ (Err msg) = return $ Err msg
 
 lastOrNil :: [Sexpr] -> Sexpr
 lastOrNil [] = Nil
