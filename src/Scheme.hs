@@ -11,7 +11,7 @@ import Eval (eval, evalEach, evalFile)
 import Numbers (NaN)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-import Types (Result (Err, Ok), Sexpr (..))
+import Types (Result (Err, Ok), Sexpr (..), (?>))
 
 type Env = EnvRef Sexpr
 
@@ -311,13 +311,6 @@ load args _ = return $ Err $ wrongArgNum args
 
 toString :: [Sexpr] -> String
 toString = unwords . map show
-
-(?>) :: IO (Result Sexpr) -> (Sexpr -> IO (Result Sexpr)) -> IO (Result Sexpr)
-(?>) x f =
-  x >>= go f
-  where
-    go f (Ok x) = f x
-    go _ (Err msg) = return $ Err msg
 
 lastOrNil :: [Sexpr] -> Sexpr
 lastOrNil [] = Nil

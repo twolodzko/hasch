@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module Types (Sexpr (..), Result (..)) where
+module Types (Sexpr (..), Result (..), (?>)) where
 
 import Envir (EnvRef)
 import Text.Printf (FieldFormatter, PrintfArg, formatArg, printf)
@@ -49,3 +49,10 @@ data Result t
   = Ok t
   | Err String
   deriving (Eq, Show)
+
+(?>) :: IO (Result t) -> (t -> IO (Result t)) -> IO (Result t)
+(?>) x f =
+  x >>= go f
+  where
+    go f (Ok x) = f x
+    go _ (Err msg) = return $ Err msg
