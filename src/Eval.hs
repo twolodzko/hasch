@@ -4,7 +4,7 @@ import Envir (EnvRef, lookup)
 import FileReader (new)
 import Parser (parse)
 import Text.Printf (printf)
-import Types (Result (Err, Ok), Sexpr (..), (?>))
+import Types (Result (Err, Ok), Sexpr (..), (>>>=))
 
 type EvalResult = IO (Result Sexpr)
 
@@ -45,7 +45,7 @@ evalEach args env =
   go args []
   where
     go (x : xs) acc =
-      eval x env ?> \v ->
+      eval x env >>>= \v ->
         go xs (v : acc)
     go [] acc =
       return $ Ok $ reverse acc
@@ -59,6 +59,6 @@ evalFile name env = do
       sexpr <- parse reader
       case sexpr of
         Ok (Just sexpr) ->
-          eval sexpr env ?> go reader
+          eval sexpr env >>>= go reader
         Ok Nothing -> return $ Ok prev
         Err msg -> return $ Err msg
