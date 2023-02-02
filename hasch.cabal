@@ -20,6 +20,6 @@ test-suite tests
     type:             exitcode-stdio-1.0
     main-is:          Main.hs
     other-modules:    ParserTest, EnvirTest, EvalTest, SchemeTest, TypesTest, ReaderTest
-    build-depends:    base ^>=4.16.4.0, containers ^>=0.6.0.0, HUnit ^>=1.6, hasch-lib
+    build-depends:    base ^>=4.16.4.0, containers ^>=0.6.0.0, HUnit ^>=1.6, regex-compat ^>=0.95.1, hasch-lib
     hs-source-dirs:   tests
     default-language: Haskell2010

@@ -18,12 +18,11 @@ eval (Symbol name) env = do
     Nothing -> Err $ printf "%s was not found" name
 eval (Quote sexpr) _ =
   return $ Ok sexpr
-eval (List list) env = evalList list env
--- do
--- result <- evalList list env
--- return $ case result of
---   Ok val -> Ok val
---   Err msg -> Err $ printf "=> %s \n %s" (List list) msg
+eval (List list) env = do
+  result <- evalList list env
+  return $ case result of
+    Ok val -> Ok val
+    Err msg -> Err $ printf "%s \n ↪ %s" (List list) msg
 eval sexpr _ =
   return $ Ok sexpr
 
