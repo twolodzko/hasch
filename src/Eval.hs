@@ -22,7 +22,7 @@ eval (List list) env = do
   result <- evalList list env
   return $ case result of
     Ok val -> Ok val
-    Err msg -> Err $ printf "%s \n ↪ %s" (List list) msg
+    Err msg -> withTraceback msg list
 eval sexpr _ =
   return $ Ok sexpr
 
@@ -61,3 +61,7 @@ evalFile name env = do
           eval sexpr env >>>= go reader
         Ok Nothing -> return $ Ok prev
         Err msg -> return $ Err msg
+
+withTraceback :: String -> [Sexpr] -> Result Sexpr
+withTraceback msg caller =
+  Err $ printf "%s \n ↪ %s" (List caller) msg
