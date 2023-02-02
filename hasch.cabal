@@ -1,7 +1,6 @@
 cabal-version:      2.4
 name:               hasch
 version:            0.1.0.0
-
 author:             Tymoteusz Wołodźko
 
 executable hasch

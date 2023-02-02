@@ -28,5 +28,4 @@ evalFiles (x : xs) env = do
   case result of
     Ok _ -> evalFiles xs env
     Err msg -> printf "Error: %s\n" msg
-evalFiles [] _ =
-  return ()
+evalFiles [] _ = return ()
