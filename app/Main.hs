@@ -3,11 +3,12 @@ module Main where
 import Envir (EnvRef)
 import Eval (evalFile)
 import Repl (loop)
+import Result (Result (..))
 import Scheme (root)
 import StdinReader (new)
 import System.Environment (getArgs)
 import Text.Printf (printf)
-import Types (Result (Err, Ok), Sexpr)
+import Types (Sexpr)
 
 main :: IO ()
 main = do

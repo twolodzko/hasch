@@ -8,9 +8,10 @@ import Data.List (group)
 import Envir (EnvRef, branch, findEnv, fromList, insert)
 import Eval (eval, evalEach, evalFile)
 import Numbers (NaN)
+import Result (Result (..), (>>>=))
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-import Types (Result (Err, Ok), Sexpr (..), (>>>=))
+import Types (Sexpr (..))
 
 type Env = EnvRef Sexpr
 

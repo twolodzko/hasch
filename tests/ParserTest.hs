@@ -1,9 +1,10 @@
 module ParserTest where
 
 import Parser (parse)
+import Result (Result (..))
 import StringReader (new)
 import Test.HUnit (Test (TestCase), Testable (test), assertEqual)
-import Types (Result (Err, Ok), Sexpr (..))
+import Types (Sexpr (..))
 
 assertParse :: String -> Result (Maybe Sexpr) -> String -> Test
 assertParse desc expected str =

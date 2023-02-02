@@ -3,9 +3,10 @@ module EvalTest where
 import Envir (insert, new)
 import Eval (eval)
 import Parser (parse)
+import Result (Result (..))
 import StringReader (new)
 import Test.HUnit (Test (TestCase), Testable (test), assertEqual)
-import Types (Result (Err, Ok), Sexpr (..))
+import Types (Sexpr (..))
 
 parseEval :: String -> IO (Result Sexpr)
 parseEval str = do

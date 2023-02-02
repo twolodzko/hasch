@@ -1,6 +1,7 @@
 
 hasch: src/* app/*
 	@ cabal install \
+		--ghc \
 		--install-method=copy \
 		--installdir=dist \
 		--enable-optimization=2 \

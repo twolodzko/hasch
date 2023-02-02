@@ -1,8 +1,9 @@
 module Parser (Reader (peek, pop), parse) where
 
 import Data.Char (isSpace)
+import Result (Result (..))
 import Text.Read (readMaybe)
-import Types (Result (Err, Ok), Sexpr (..))
+import Types (Sexpr (..))
 
 class Reader r where
   peek :: r -> IO (Maybe Char)

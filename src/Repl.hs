@@ -3,9 +3,10 @@ module Repl (loop) where
 import Envir (EnvRef)
 import Eval (eval)
 import Parser (parse)
+import Result (Result (..))
 import StdinReader (StdinReader)
 import Text.Printf (printf)
-import Types (Result (Err, Ok), Sexpr)
+import Types (Sexpr)
 
 type Env = EnvRef Sexpr
 

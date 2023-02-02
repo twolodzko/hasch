@@ -3,8 +3,9 @@ module Eval (eval, evalEach, evalFile) where
 import Envir (EnvRef, lookup)
 import FileReader (new)
 import Parser (parse)
+import Result (Result (..), (>>>=))
 import Text.Printf (printf)
-import Types (Result (Err, Ok), Sexpr (..), (>>>=))
+import Types (Sexpr (..))
 
 type EvalResult = IO (Result Sexpr)
 

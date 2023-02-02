@@ -4,6 +4,7 @@ import Data.Maybe (isJust, isNothing)
 import Envir (EnvRef, branch, insert, lookup)
 import Eval (eval, evalFile)
 import Parser (parse)
+import Result (Result (..), isErr)
 import Scheme (root)
 import StringReader (new)
 import Test.HUnit
@@ -15,7 +16,7 @@ import Test.HUnit
   )
 import Text.Printf (printf)
 import Text.Regex
-import Types (Result (Err, Ok), Sexpr (..), isErr)
+import Types (Sexpr (..))
 
 parseEval :: String -> Envir.EnvRef Sexpr -> IO (Result Sexpr)
 parseEval str env = do
