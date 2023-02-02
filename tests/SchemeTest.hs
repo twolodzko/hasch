@@ -13,13 +13,13 @@ import Test.HUnit
     assertBool,
     assertEqual,
   )
+import Text.Printf (printf)
 import Text.Regex
 import Types (Result (Err, Ok), Sexpr (..), isErr)
 
 parseEval :: String -> Envir.EnvRef Sexpr -> IO (Result Sexpr)
 parseEval str env = do
-  reader <- StringReader.new str
-  result <- parse reader
+  result <- parse =<< StringReader.new str
   case result of
     Ok (Just sexpr) -> eval sexpr env
     Err msg -> return $ Err msg
@@ -28,21 +28,25 @@ assertEvalEqual :: Sexpr -> String -> Test
 assertEvalEqual expected str =
   TestCase
     ( do
-        env <- root
-        result <- parseEval str env
-        assertEqual str (Ok expected) result
+        result <- parseEval str =<< root
+        assertEqual
+          (printf "expecting %s for %s" expected str)
+          (Ok expected)
+          result
     )
 
 assertEvalThrows :: String -> String -> Test
-assertEvalThrows expected str =
+assertEvalThrows err str =
   TestCase
     ( do
-        env <- root
-        result <- parseEval str env
+        result <- parseEval str =<< root
         case result of
           Ok _ -> error "didn't raise error"
           Err msg ->
-            assertBool str $ isJust $ matchRegex (mkRegex $ expected ++ "$") msg
+            assertBool
+              (printf "expecting error '%s' for: %s" err str)
+              $ isJust
+              $ matchRegex (mkRegex $ err ++ "$") msg
     )
 
 setBangTest :: Test

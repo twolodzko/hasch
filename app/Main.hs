@@ -14,16 +14,13 @@ main = do
   args <- getArgs
   if null args
     then repl
-    else do
-      env <- root
-      evalFiles args env
+    else evalFiles args =<< root
 
 repl :: IO ()
 repl = do
   printf "Press ^C to exit.\n\n"
-  env <- root
   reader <- StdinReader.new
-  loop reader env
+  loop reader =<< root
 
 evalFiles :: [String] -> EnvRef Sexpr -> IO ()
 evalFiles (x : xs) env = do

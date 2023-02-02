@@ -9,8 +9,7 @@ assertParse :: String -> Result (Maybe Sexpr) -> String -> Test
 assertParse desc expected str =
   TestCase
     ( do
-        reader <- StringReader.new str
-        result <- parse reader
+        result <- parse =<< StringReader.new str
         assertEqual desc expected result
     )
 
