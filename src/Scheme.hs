@@ -6,7 +6,6 @@ module Scheme (root) where
 import Control.Exception (evaluate, try)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
-import Data.Functor ((<&>))
 import Data.List (group)
 import Envir (EnvRef, branch, findEnv, fromList, insert)
 import Eval (eval, evalEach, evalFile)
