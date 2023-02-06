@@ -1,9 +1,10 @@
 module Main where
 
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Except (runExceptT)
 import Envir (EnvRef)
 import Eval (evalFile)
 import Repl (loop)
-import Result (Result (..))
 import Scheme (root)
 import StdinReader (new)
 import System.Environment (getArgs)
@@ -25,8 +26,8 @@ repl = do
 
 evalFiles :: [String] -> EnvRef Sexpr -> IO ()
 evalFiles (x : xs) env = do
-  result <- Eval.evalFile x env
+  result <- liftIO $ runExceptT $ Eval.evalFile x env
   case result of
-    Ok _ -> evalFiles xs env
-    Err msg -> printf "Error: %s\n" msg
+    Right _ -> evalFiles xs env
+    Left msg -> printf "Error: %s\n" msg
 evalFiles [] _ = return ()

@@ -1,83 +1,85 @@
 module Parser (Reader (peek, pop), parse) where
 
+import Control.Exception (throw)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import Data.Char (isSpace)
-import Result (Result (..))
 import Text.Read (readMaybe)
-import Types (Sexpr (..))
+import Types (Error, Sexpr (..))
 
 class Reader r where
   peek :: r -> IO (Maybe Char)
   pop :: r -> IO (Maybe Char)
 
-type ParsingResult = IO (Result (Maybe Sexpr))
+type ParsingResult = ExceptT Error IO (Maybe Sexpr)
 
 parse :: Reader r => r -> ParsingResult
 parse r = do
-  result <- peek r
+  result <- liftIO $ peek r
   case result of
     Just x | isSpace x -> popAnd r parse
     Just '(' -> popAnd r $ parseList []
-    Just ')' -> return $ Err "unexpected )"
+    Just ')' -> throwE "unexpected )"
     Just '\'' -> popAnd r parseQuoted
-    Just ',' -> return $ Err "not implemented"
+    Just ',' -> throwE "not implemented"
     Just '"' -> popAnd r $ parseString ""
     Just ';' -> do
-      skipLine r
+      liftIO $ skipLine r
       parse r
     Just _ -> parseWord r
-    Nothing -> return $ Ok Nothing
+    Nothing -> return Nothing
 
 popAnd :: Reader r => r -> (r -> ParsingResult) -> ParsingResult
 popAnd r f = do
-  pop r
+  liftIO $ pop r
   f r
 
 parseList :: Reader r => [Sexpr] -> r -> ParsingResult
 parseList acc r = do
-  result <- peek r
+  result <- liftIO $ peek r
   case result of
     Just ')' -> do
-      pop r
-      return $ Ok $ Just $ List $ reverse acc
+      liftIO $ pop r
+      return $ Just $ List $ reverse acc
     Just c | isSpace c -> popAnd r $ parseList acc
     Just ';' -> do
-      skipLine r
+      liftIO $ skipLine r
       parseList acc r
     _ -> do
-      result <- parse r
+      result <- liftIO $ runExceptT $ parse r
       case result of
-        Ok (Just sexpr) -> parseList (sexpr : acc) r
-        Ok Nothing -> return $ Err "missing )"
-        Err msg -> return $ Err msg
+        Right (Just sexpr) -> parseList (sexpr : acc) r
+        Right Nothing -> throwE "missing )"
+        Left msg -> throwE msg
 
 parseString :: Reader r => String -> r -> ParsingResult
 parseString acc r = do
-  result <- pop r
+  result <- liftIO $ pop r
   case result of
-    Just '"' -> return $ Ok $ Just $ String $ reverse acc
+    Just '"' -> return $ Just $ String $ reverse acc
     Just c -> parseString (c : acc) r
-    Nothing -> return $ Err "missing \""
+    Nothing -> throwE "missing \""
 
 parseQuoted :: Reader r => r -> ParsingResult
 parseQuoted r = do
-  result <- parse r
-  return $ case result of
-    Ok (Just sexpr) -> Ok $ Just $ Quote sexpr
-    Ok Nothing -> Err "missing quoted value"
-    err -> err
+  result <- liftIO $ runExceptT $ parse r
+  case result of
+    Right (Just sexpr) -> return $ Just $ Quote sexpr
+    Right Nothing -> throwE "missing quoted value"
+    Left err -> throwE err
 
 parseWord :: Reader r => r -> ParsingResult
 parseWord r = do
-  result <- readWord r ""
-  return $ Ok $ maybeTransform [maybeBool, maybeInt, maybeFloat, Just . Symbol] result
+  result <- liftIO $ readWord r ""
+  return $ maybeTransform [maybeBool, maybeInt, maybeFloat, Just . Symbol] result
 
 readWord :: Reader r => r -> String -> IO String
 readWord r acc = do
-  result <- peek r
+  result <- liftIO $ peek r
   case result of
     Just c | isWordEnd c -> return $ reverse acc
     Just c -> do
-      pop r
+      liftIO $ pop r
       readWord r (c : acc)
     Nothing -> return $ reverse acc
 
@@ -86,7 +88,7 @@ maybeTransform (f : fx) x =
   case f x of
     Just v -> Just v
     Nothing -> maybeTransform fx x
-maybeTransform [] x = error "unreachable"
+maybeTransform [] x = undefined
 
 maybeBool :: String -> Maybe Sexpr
 maybeBool "#t" = Just $ Bool True
@@ -106,7 +108,7 @@ isWordEnd ch =
 
 skipLine :: Reader r => r -> IO ()
 skipLine r = do
-  result <- pop r
+  result <- liftIO $ pop r
   case result of
     Just '\n' -> return ()
     Nothing -> return ()

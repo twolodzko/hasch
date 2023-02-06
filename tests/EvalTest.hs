@@ -1,27 +1,28 @@
 module EvalTest where
 
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Except (runExceptT, throwE)
 import Envir (insert, new)
 import Eval (eval)
 import Parser (parse)
-import Result (Result (..))
 import StringReader (new)
 import Test.HUnit (Test (TestCase), Testable (test), assertEqual)
-import Types (Sexpr (..))
+import Types (Error, Result, Sexpr (..))
 
-parseEval :: String -> IO (Result Sexpr)
+parseEval :: String -> Result
 parseEval str = do
-  env <- Envir.new
-  reader <- StringReader.new str
-  result <- parse reader
+  env <- liftIO Envir.new
+  reader <- liftIO $ StringReader.new str
+  result <- liftIO $ runExceptT $ parse reader
   case result of
-    Ok (Just sexpr) -> eval sexpr env
-    Err msg -> return $ Err msg
+    Right (Just sexpr) -> eval sexpr env
+    Left msg -> throwE msg
 
-assertParseEval :: String -> Result Sexpr -> String -> Test
+assertParseEval :: String -> Either Error Sexpr -> String -> Test
 assertParseEval desc expected str =
   TestCase
     ( do
-        result <- parseEval str
+        result <- liftIO $ runExceptT $ parseEval str
         assertEqual desc expected result
     )
 
@@ -29,32 +30,32 @@ testSymbol :: Test
 testSymbol =
   TestCase
     ( do
-        env <- Envir.new
-        Envir.insert "x" (Int 42) env
-        result <- eval (Symbol "x") env
-        assertEqual "evaluate saved symbol" (Ok $ Int 42) result
+        env <- liftIO Envir.new
+        liftIO (Envir.insert "x" (Int 42) env)
+        result <- liftIO $ runExceptT $ eval (Symbol "x") env
+        assertEqual "evaluate saved symbol" (Right $ Int 42) result
     )
 
 testMissingSymbol :: Test
 testMissingSymbol =
   TestCase
     ( do
-        env <- Envir.new
-        Envir.insert "foo" (Int 42) env
-        result <- eval (Symbol "bar") env
-        assertEqual "evaluate symbol that doesn't exist" (Err "bar was not found") result
+        env <- liftIO Envir.new
+        liftIO (Envir.insert "foo" (Int 42) env)
+        result <- liftIO $ runExceptT $ eval (Symbol "bar") env
+        assertEqual "evaluate symbol that doesn't exist" (Left "bar was not found") result
     )
 
 tests :: Test
 tests =
   test
-    [ assertParseEval "evaluate integer" (Ok $ Int 42) "42",
-      assertParseEval "evaluate float" (Ok $ Float 3.14) "3.14",
-      assertParseEval "evaluate #t" (Ok $ Bool True) "#t",
-      assertParseEval "evaluate #f" (Ok $ Bool False) "#f",
-      assertParseEval "evaluate string" (Ok $ String "hello world") "\"hello world\"",
-      assertParseEval "evaluate null list" (Ok $ List []) "()",
-      assertParseEval "evaluate quoted symbol" (Ok $ Symbol "foo") "'foo",
+    [ assertParseEval "evaluate integer" (Right $ Int 42) "42",
+      assertParseEval "evaluate float" (Right $ Float 3.14) "3.14",
+      assertParseEval "evaluate #t" (Right $ Bool True) "#t",
+      assertParseEval "evaluate #f" (Right $ Bool False) "#f",
+      assertParseEval "evaluate string" (Right $ String "hello world") "\"hello world\"",
+      assertParseEval "evaluate null list" (Right $ List []) "()",
+      assertParseEval "evaluate quoted symbol" (Right $ Symbol "foo") "'foo",
       testSymbol,
       testMissingSymbol
     ]

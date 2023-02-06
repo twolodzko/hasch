@@ -1,10 +1,12 @@
 module SchemeTest where
 
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Except (runExceptT, throwE)
+import Data.Either (isLeft)
 import Data.Maybe (isJust, isNothing)
 import Envir (EnvRef, branch, insert, lookup)
 import Eval (eval, evalFile)
 import Parser (parse)
-import Result (Result (..), isErr)
 import Scheme (root)
 import StringReader (new)
 import Test.HUnit
@@ -16,23 +18,25 @@ import Test.HUnit
   )
 import Text.Printf (printf)
 import Text.Regex
-import Types (Sexpr (..))
+import Types (Result, Sexpr (..))
 
-parseEval :: String -> Envir.EnvRef Sexpr -> IO (Result Sexpr)
+parseEval :: String -> Envir.EnvRef Sexpr -> Result
 parseEval str env = do
-  result <- parse =<< StringReader.new str
+  reader <- liftIO (StringReader.new str)
+  result <- liftIO $ runExceptT $ parse reader
   case result of
-    Ok (Just sexpr) -> eval sexpr env
-    Err msg -> return $ Err msg
+    Right (Just sexpr) -> eval sexpr env
+    Left msg -> throwE msg
 
 assertEvalEqual :: Sexpr -> String -> Test
 assertEvalEqual expected str =
   TestCase
     ( do
-        result <- parseEval str =<< root
+        env <- liftIO root
+        result <- liftIO $ runExceptT $ parseEval str env
         assertEqual
           (printf "expecting %s for %s" expected str)
-          (Ok expected)
+          (Right expected)
           result
     )
 
@@ -40,10 +44,11 @@ assertEvalThrows :: String -> String -> Test
 assertEvalThrows err str =
   TestCase
     ( do
-        result <- parseEval str =<< root
+        env <- liftIO root
+        result <- liftIO $ runExceptT $ parseEval str env
         case result of
-          Ok _ -> error "didn't raise error"
-          Err msg ->
+          Right _ -> error "didn't raise error"
+          Left msg ->
             assertBool
               (printf "expecting error '%s' for: %s" err str)
               $ isJust
@@ -54,11 +59,11 @@ setBangTest :: Test
 setBangTest =
   TestCase
     ( do
-        env <- Scheme.root
-        child <- Envir.branch env
+        env <- liftIO Scheme.root
+        child <- liftIO $ Envir.branch env
         Envir.insert "x" (Symbol "wrong") child
         grandchild <- Envir.branch child
-        parseEval "(set! x 'ok)" grandchild
+        liftIO $ runExceptT $ parseEval "(set! x 'ok)" grandchild
 
         result <- Envir.lookup "x" env
         assert $ isNothing result
@@ -79,32 +84,32 @@ fiboTailRecursive =
               "(define impl (lambda (it second first) \
               \  (if (= it 0) first \
               \      (impl (- it 1) (+ first second) second))))"
-        assert $ not . isErr <$> parseEval code env
-        assert $ not . isErr <$> parseEval "(define fibo (lambda (n) (impl n 1 0)))" env
+        assert $ not . isLeft <$> runExceptT (parseEval code env)
+        assert $ not . isLeft <$> runExceptT (parseEval "(define fibo (lambda (n) (impl n 1 0)))" env)
 
-        result <- parseEval "(fibo 0)" env
-        assert $ Ok (Int 0) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 0)" env
+        assert $ Right (Int 0) == result
 
-        result <- parseEval "(fibo 1)" env
-        assert $ Ok (Int 1) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 1)" env
+        assert $ Right (Int 1) == result
 
-        result <- parseEval "(fibo 2)" env
-        assert $ Ok (Int 1) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 2)" env
+        assert $ Right (Int 1) == result
 
-        result <- parseEval "(fibo 3)" env
-        assert $ Ok (Int 2) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 3)" env
+        assert $ Right (Int 2) == result
 
-        result <- parseEval "(fibo 7)" env
-        assert $ Ok (Int 13) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 7)" env
+        assert $ Right (Int 13) == result
 
-        result <- parseEval "(fibo 9)" env
-        assert $ Ok (Int 34) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 9)" env
+        assert $ Right (Int 34) == result
 
-        result <- parseEval "(fibo 10)" env
-        assert $ Ok (Int 55) == result
+        result <- liftIO $ runExceptT $ parseEval "(fibo 10)" env
+        assert $ Right (Int 55) == result
 
         -- just run and not throw stack overflow error
-        assert $ not . isErr <$> parseEval "(fibo 10000)" env
+        assert $ not . isLeft <$> runExceptT (parseEval "(fibo 10000)" env)
     )
 
 tests :: Test

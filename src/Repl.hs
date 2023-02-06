@@ -1,9 +1,9 @@
 module Repl (loop) where
 
+import Control.Monad.Trans.Except (runExceptT)
 import Envir (EnvRef)
 import Eval (eval)
 import Parser (parse)
-import Result (Result (..))
 import StdinReader (StdinReader)
 import Text.Printf (printf)
 import Types (Sexpr)
@@ -12,23 +12,23 @@ type Env = EnvRef Sexpr
 
 loop :: StdinReader -> Env -> IO ()
 loop r env = do
-  result <- Parser.parse r
+  result <- runExceptT $ Parser.parse r
   case result of
-    Ok (Just sexpr) -> do
+    Right (Just sexpr) -> do
       evalAndPrint sexpr env
       loop r env
-    Ok Nothing ->
+    Right Nothing ->
       loop r env
-    Err msg -> do
+    Left msg -> do
       printErr msg
       loop r env
 
 evalAndPrint :: Sexpr -> Env -> IO ()
 evalAndPrint sexpr env = do
-  result <- eval sexpr env
+  result <- runExceptT $ eval sexpr env
   case result of
-    Ok sexpr -> print sexpr
-    Err msg -> printErr msg
+    Right sexpr -> print sexpr
+    Left msg -> printErr msg
 
 printErr :: String -> IO ()
 printErr = printf "Error: %s\n"

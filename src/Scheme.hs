@@ -4,14 +4,16 @@
 module Scheme (root) where
 
 import Control.Exception (evaluate, try)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import Data.Functor ((<&>))
 import Data.List (group)
 import Envir (EnvRef, branch, findEnv, fromList, insert)
 import Eval (eval, evalEach, evalFile)
 import Numbers (NaN)
-import Result (Result (..), (>>>=))
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-import Types (Sexpr (..))
+import Types (Error, Result, Sexpr (..), liftE)
 
 type Env = EnvRef Sexpr
 
@@ -27,8 +29,8 @@ root =
       (">", Func $ numCompare (>)),
       ("->integer", Func $ evalEachAnd $ oneArg toInt),
       ("->float", Func $ evalEachAnd $ oneArg toFloat),
-      ("and", Func $ evalEachAnd $ Ok . andFn),
-      ("begin", Func $ evalEachAnd $ Ok . lastOrNil),
+      ("and", Func $ evalEachAnd $ return . andFn),
+      ("begin", Func $ evalEachAnd $ return . lastOrNil),
       ("bool?", Func $ evalEachAnd $ oneArg isBool),
       ("car", Func $ evalEachAnd $ oneArg car),
       ("cdr", Func $ evalEachAnd $ oneArg cdr),
@@ -39,7 +41,7 @@ root =
       ("else", Bool True),
       ("eq?", Func equal),
       ("equal?", Func equal),
-      ("error", Func $ evalEachAnd $ Err . toString),
+      ("error", Func $ evalEachAnd $ Left . toString),
       ("eval", Func evalFn),
       ("float?", Func $ evalEachAnd $ oneArg isFloat),
       ("if", Func ifFn),
@@ -47,145 +49,148 @@ root =
       ("lambda", Func lambda),
       ("let", Func letFn),
       ("let*", Func letStarFn),
-      ("list", Func $ evalEachAnd $ Ok . List),
+      ("list", Func $ evalEachAnd $ return . List),
       ("load", Func load),
-      ("not", Func $ evalEachAnd $ oneArg $ Ok . Bool . not . isTrue),
+      ("not", Func $ evalEachAnd $ oneArg $ return . Bool . not . isTrue),
       ("null?", Func $ evalEachAnd $ oneArg isNull),
       ("number?", Func $ evalEachAnd $ oneArg isNumber),
-      ("or", Func $ evalEachAnd $ Ok . orFn),
+      ("or", Func $ evalEachAnd $ return . orFn),
       ("pair?", Func $ evalEachAnd $ oneArg isPair),
       ("procedure?", Func $ evalEachAnd $ oneArg isProcedure),
       ("quote", Func quote),
       ("set!", Func setBang),
       ("string?", Func $ evalEachAnd $ oneArg isString),
-      ("string", Func $ evalEachAnd $ Ok . String . toString),
+      ("string", Func $ evalEachAnd $ return . String . toString),
       ("symbol?", Func $ evalEachAnd $ oneArg isSymbol)
     ]
 
-quote :: [Sexpr] -> Env -> IO (Result Sexpr)
-quote [sexpr] _ = return $ Ok sexpr
-quote args _ = return $ Err $ wrongArgNum args
+quote :: [Sexpr] -> Env -> Result
+quote [sexpr] _ = return sexpr
+quote args _ = throwE $ wrongArgNum args
 
-car :: Sexpr -> Result Sexpr
-car (List list) = Ok $ head list
-car sexpr = Err $ wrongArg sexpr
+car :: Sexpr -> Either Error Sexpr
+car (List list) = Right $ head list
+car sexpr = Left $ wrongArg sexpr
 
-cdr :: Sexpr -> Result Sexpr
-cdr (List list) = Ok $ List $ tail list
-cdr sexpr = Err $ wrongArg sexpr
+cdr :: Sexpr -> Either Error Sexpr
+cdr (List list) = Right $ List $ tail list
+cdr sexpr = Left $ wrongArg sexpr
 
-cons :: [Sexpr] -> Result Sexpr
-cons (lhs : [List rhs]) = Ok $ List (lhs : rhs)
-cons (lhs : [rhs]) = Ok $ List (lhs : [rhs])
-cons args = Err $ wrongArgNum args
+cons :: [Sexpr] -> Either Error Sexpr
+cons (lhs : [List rhs]) = Right $ List (lhs : rhs)
+cons (lhs : [rhs]) = Right $ List (lhs : [rhs])
+cons args = Left $ wrongArgNum args
 
-define :: [Sexpr] -> Env -> IO (Result Sexpr)
+define :: [Sexpr] -> Env -> Result
 define ((Symbol k) : [v]) env =
-  eval v env >>>= \v -> do
-    Envir.insert k v env
-    return $ Ok v
+  eval v env >>= go
+  where
+    go v = do
+      liftIO $ Envir.insert k v env
+      return v
 define (k : [_]) _ =
-  return $ Err $ notASymbol k
+  throwE $ notASymbol k
 define args _ =
-  return $ Err $ wrongArgNum args
+  throwE $ wrongArgNum args
 
-setBang :: [Sexpr] -> Env -> IO (Result Sexpr)
+setBang :: [Sexpr] -> Env -> Result
 setBang ((Symbol k) : [v]) env = do
-  result <- Envir.findEnv k env
+  result <- liftIO $ Envir.findEnv k env
   case result of
     Just env ->
-      eval v env >>>= \v -> do
-        Envir.insert k v env
-        return $ Ok v
-    Nothing -> return $ Err $ printf "%s was not defined" k
+      eval v env >>= \v -> do
+        liftIO $ Envir.insert k v env
+        return v
+    Nothing -> throwE $ printf "%s was not defined" k
 setBang (k : [_]) _ =
-  return $ Err $ notASymbol k
+  throwE $ notASymbol k
 setBang args _ =
-  return $ Err $ wrongArgNum args
+  throwE $ wrongArgNum args
 
-lambda :: [Sexpr] -> Env -> IO (Result Sexpr)
+lambda :: [Sexpr] -> Env -> Result
 lambda (List vars : body) parentEnv = do
-  return $ case extractVars vars [] of
-    Ok vars -> Ok $ Func $ go vars
-    Err msg -> Err msg
+  case extractVars vars [] of
+    Right vars -> return $ Func $ go vars
+    Left msg -> throwE msg
   where
     go vars args env = do
-      local <- Envir.branch parentEnv
+      local <- liftIO $ Envir.branch parentEnv
       lambdaInit vars args env local
-      evalEachAnd (Ok . lastOrNil) body local
-lambda (sexpr : _) _ = return $ Err $ wrongArg sexpr
-lambda args _ = return $ Err $ wrongArgNum args
+      evalEachAnd (return . lastOrNil) body local
+lambda (sexpr : _) _ = throwE $ wrongArg sexpr
+lambda args _ = throwE $ wrongArgNum args
 
-extractVars :: [Sexpr] -> [String] -> Result [String]
+extractVars :: [Sexpr] -> [String] -> Either Error [String]
 extractVars (Symbol x : xs) acc = extractVars xs (x : acc)
-extractVars [] acc = Ok $ reverse acc
-extractVars (sexpr : _) _ = Err $ notASymbol sexpr
+extractVars [] acc = Right $ reverse acc
+extractVars (sexpr : _) _ = Left $ notASymbol sexpr
 
-lambdaInit :: [String] -> [Sexpr] -> Env -> EnvRef Sexpr -> IO (Result Sexpr)
+lambdaInit :: [String] -> [Sexpr] -> Env -> EnvRef Sexpr -> Result
 lambdaInit (v : vars) (a : args) evalEnv saveEnv =
-  eval a evalEnv >>>= \x -> do
-    Envir.insert v x saveEnv
+  eval a evalEnv >>= \x -> do
+    liftIO $ Envir.insert v x saveEnv
     lambdaInit vars args evalEnv saveEnv
-lambdaInit [] [] _ _ = return $ Ok Nil
+lambdaInit [] [] _ _ = return Nil
 
-letFn :: [Sexpr] -> Env -> IO (Result Sexpr)
-letFn args env =
-  letImpl args env =<< Envir.branch env
+letFn :: [Sexpr] -> Env -> Result
+letFn args env = do
+  local <- liftIO $ Envir.branch env
+  letImpl args env local
 
-letStarFn :: [Sexpr] -> Env -> IO (Result Sexpr)
+letStarFn :: [Sexpr] -> Env -> Result
 letStarFn args env = do
-  local <- Envir.branch env
+  local <- liftIO $ Envir.branch env
   letImpl args local local
 
-letImpl :: [Sexpr] -> Env -> Env -> IO (Result Sexpr)
+letImpl :: [Sexpr] -> Env -> Env -> Result
 letImpl (List list : body) evalEnv saveEnv =
-  letInit list evalEnv saveEnv >>>= \_ ->
-    (evalEachAnd $ Ok . lastOrNil) body saveEnv
+  letInit list evalEnv saveEnv
+    >> (evalEachAnd $ return . lastOrNil) body saveEnv
 letImpl (sexpr : _) _ _ =
-  return $ Err $ wrongArg sexpr
+  throwE $ wrongArg sexpr
 letImpl _ _ _ =
-  return $ Err "invalid arguments"
+  throwE "invalid arguments"
 
-letInit :: [Sexpr] -> Env -> EnvRef Sexpr -> IO (Result Sexpr)
+letInit :: [Sexpr] -> Env -> EnvRef Sexpr -> Result
 letInit (List (Symbol key : [val]) : xs) evalEnv saveEnv =
-  eval val evalEnv >>>= \x -> do
-    Envir.insert key x saveEnv
+  eval val evalEnv >>= \x -> do
+    liftIO $ Envir.insert key x saveEnv
     letInit xs evalEnv saveEnv
 letInit (sexpr : _) _ _ =
-  return $ Err $ notASymbol sexpr
+  throwE $ notASymbol sexpr
 letInit [] _ _ =
-  return $ Ok Nil
+  return Nil
 
-display :: [Sexpr] -> Env -> IO (Result Sexpr)
+display :: [Sexpr] -> Env -> Result
 display args env =
-  evalEach args env >>>= \x -> do
-    printf "%s\n" $ toString x
-    return $ Ok Nil
+  evalEach args env >>= \x -> do
+    liftIO $ printf "%s\n" $ toString x
+    return Nil
 
-evalFn :: [Sexpr] -> Env -> IO (Result Sexpr)
+evalFn :: [Sexpr] -> Env -> Result
 evalFn [sexpr] env =
-  eval sexpr env >>>= \x ->
+  eval sexpr env >>= \x ->
     eval x env
 
-ifFn :: [Sexpr] -> Env -> IO (Result Sexpr)
+ifFn :: [Sexpr] -> Env -> Result
 ifFn (cond : ifTrue : [ifFalse]) env =
-  eval cond env >>>= go
+  eval cond env >>= go
   where
     go c | isTrue c = eval ifTrue env
     go _ = eval ifFalse env
-ifFn args _ = return $ Err $ wrongArgNum args
+ifFn args _ = throwE $ wrongArgNum args
 
-cond :: [Sexpr] -> Env -> IO (Result Sexpr)
+cond :: [Sexpr] -> Env -> Result
 cond ((List (condition : body)) : xs) env =
-  eval condition env >>>= go
+  eval condition env >>= go
   where
     go s | isTrue s =
       case body of
-        [] -> return $ Ok s
-        body -> (evalEachAnd $ Ok . last) body env
+        [] -> return s
+        body -> (evalEachAnd $ return . last) body env
     go s = cond xs env
-cond (sexpr : _) _ = return $ Err $ wrongArg sexpr
-cond [] _ = return $ Ok Nil
+cond (sexpr : _) _ = throwE $ wrongArg sexpr
+cond [] _ = return Nil
 
 andFn :: [Sexpr] -> Sexpr
 andFn [x] = x
@@ -198,109 +203,108 @@ orFn (x : _) | isTrue x = x
 orFn (_ : xs) = orFn xs
 orFn [] = Bool False
 
-isBool :: Sexpr -> Result Sexpr
-isBool (Bool _) = Ok $ Bool True
-isBool _ = Ok $ Bool False
+isBool :: Sexpr -> Either Error Sexpr
+isBool (Bool _) = return $ Bool True
+isBool _ = return $ Bool False
 
-isNumber :: Sexpr -> Result Sexpr
-isNumber (Int _) = Ok $ Bool True
-isNumber (Float _) = Ok $ Bool True
-isNumber _ = Ok $ Bool False
+isNumber :: Sexpr -> Either Error Sexpr
+isNumber (Int _) = return $ Bool True
+isNumber (Float _) = return $ Bool True
+isNumber _ = return $ Bool False
 
-isInt :: Sexpr -> Result Sexpr
-isInt (Int _) = Ok $ Bool True
-isInt _ = Ok $ Bool False
+isInt :: Sexpr -> Either Error Sexpr
+isInt (Int _) = return $ Bool True
+isInt _ = return $ Bool False
 
-isFloat :: Sexpr -> Result Sexpr
-isFloat (Float _) = Ok $ Bool True
-isFloat _ = Ok $ Bool False
+isFloat :: Sexpr -> Either Error Sexpr
+isFloat (Float _) = return $ Bool True
+isFloat _ = return $ Bool False
 
-isString :: Sexpr -> Result Sexpr
-isString (String _) = Ok $ Bool True
-isString _ = Ok $ Bool False
+isString :: Sexpr -> Either Error Sexpr
+isString (String _) = return $ Bool True
+isString _ = return $ Bool False
 
-isSymbol :: Sexpr -> Result Sexpr
-isSymbol (Symbol _) = Ok $ Bool True
-isSymbol _ = Ok $ Bool False
+isSymbol :: Sexpr -> Either Error Sexpr
+isSymbol (Symbol _) = return $ Bool True
+isSymbol _ = return $ Bool False
 
-isNull :: Sexpr -> Result Sexpr
-isNull (List []) = Ok $ Bool True
-isNull _ = Ok $ Bool False
+isNull :: Sexpr -> Either Error Sexpr
+isNull (List []) = return $ Bool True
+isNull _ = return $ Bool False
 
-isPair :: Sexpr -> Result Sexpr
-isPair (List []) = Ok $ Bool False
-isPair (List _) = Ok $ Bool True
-isPair _ = Ok $ Bool False
+isPair :: Sexpr -> Either Error Sexpr
+isPair (List []) = return $ Bool False
+isPair (List _) = return $ Bool True
+isPair _ = return $ Bool False
 
-isProcedure :: Sexpr -> Result Sexpr
-isProcedure (Func _) = Ok $ Bool True
-isProcedure _ = Ok $ Bool False
+isProcedure :: Sexpr -> Either Error Sexpr
+isProcedure (Func _) = return $ Bool True
+isProcedure _ = return $ Bool False
 
-toInt :: Sexpr -> Result Sexpr
-toInt (Float num) = Ok $ Int $ round num
-toInt (Int num) = Ok $ Int num
+toInt :: Sexpr -> Either Error Sexpr
+toInt (Float num) = return $ Int $ round num
+toInt (Int num) = return $ Int num
 toInt (String str) =
   case (readMaybe str :: Maybe Int) of
-    Just num -> Ok $ Int num
-    Nothing -> Err $ printf "cannot parse: %s" str
-toInt sexpr = Err $ wrongArg sexpr
+    Just num -> return $ Int num
+    Nothing -> Left $ printf "cannot parse: %s" str
+toInt sexpr = Left $ wrongArg sexpr
 
-toFloat :: Sexpr -> Result Sexpr
-toFloat (Int num) = Ok $ Float $ fromIntegral num
-toFloat (Float num) = Ok $ Float num
+toFloat :: Sexpr -> Either Error Sexpr
+toFloat (Int num) = return $ Float $ fromIntegral num
+toFloat (Float num) = return $ Float num
 toFloat (String str) =
   case (readMaybe str :: Maybe Float) of
-    Just num -> Ok $ Float num
-    Nothing -> Err $ printf "cannot parse: %s" str
-toFloat sexpr = Err $ wrongArg sexpr
+    Just num -> return $ Float num
+    Nothing -> Left $ printf "cannot parse: %s" str
+toFloat sexpr = Left $ wrongArg sexpr
 
 allEqual :: [Sexpr] -> Bool
 allEqual [] = True
 allEqual [_] = True
 allEqual xs = all (== head xs) (tail xs)
 
-equal :: [Sexpr] -> Env -> IO (Result Sexpr)
-equal = evalEachAnd $ Ok . Bool . allEqual
+equal :: [Sexpr] -> Env -> Result
+equal = evalEachAnd $ return . Bool . allEqual
 
-numReduce :: (Sexpr -> Sexpr -> Sexpr) -> Sexpr -> [Sexpr] -> Env -> IO (Result Sexpr)
-numReduce _ init [] _ = return $ Ok init
+numReduce :: (Sexpr -> Sexpr -> Sexpr) -> Sexpr -> [Sexpr] -> Env -> Result
+numReduce _ init [] _ = return init
 numReduce op init [x] env = numReduceImpl op [x] env init
 numReduce op _ (x : xs) env =
-  eval x env >>>= numReduceImpl op xs env
+  eval x env >>= numReduceImpl op xs env
 
-numReduceImpl :: (Sexpr -> Sexpr -> Sexpr) -> [Sexpr] -> Env -> Sexpr -> IO (Result Sexpr)
+numReduceImpl :: (Sexpr -> Sexpr -> Sexpr) -> [Sexpr] -> Env -> Sexpr -> Result
 numReduceImpl op (x : xs) env acc =
-  eval x env >>>= \v -> do
-    try (evaluate $ op acc v) :: IO (Either NaN Sexpr)
-    result <- try (evaluate $ op acc v) :: IO (Either NaN Sexpr)
+  eval x env >>= \v -> do
+    result <- liftIO (try (evaluate $ op acc v) :: IO (Either NaN Sexpr))
     case result of
-      Left err -> return $ Err $ show err
+      Left msg -> throwE $ show msg
       Right new -> numReduceImpl op xs env new
-numReduceImpl _ [] _ acc = return $ Ok acc
+numReduceImpl _ [] _ acc = return acc
 
-numCompare :: (Sexpr -> Sexpr -> Bool) -> [Sexpr] -> Env -> IO (Result Sexpr)
-numCompare _ [] _ = return $ Ok $ Bool True
+numCompare :: (Sexpr -> Sexpr -> Bool) -> [Sexpr] -> Env -> Result
+numCompare _ [] _ = return $ Bool True
 numCompare _ [x] env =
-  eval x env >>>= \_ -> return $ Ok $ Bool True
+  eval x env >> return (Bool True)
 numCompare op (x : xs) env =
-  eval x env >>>= go xs
+  eval x env >>= go xs
   where
     go (x : xs) acc =
-      eval x env >>>= \v -> do
-        result <- try (evaluate $ op acc v) :: IO (Either NaN Bool)
+      eval x env >>= \v -> do
+        result <- liftIO (try (evaluate $ op acc v) :: IO (Either NaN Bool))
         case result of
-          Left err -> return $ Err $ show err
+          Left msg -> throwE $ show msg
           Right True -> go xs v
-          Right False -> return $ Ok $ Bool False
-    go [] acc = return $ Ok $ Bool True
+          Right False -> return $ Bool False
+    go [] acc = return $ Bool True
 
-load :: [Sexpr] -> Env -> IO (Result Sexpr)
+load :: [Sexpr] -> Env -> Result
 load [arg] env =
-  eval arg env >>>= go
+  eval arg env >>= go
   where
     go (String name) = evalFile name env
-    go sexpr = return $ Err $ wrongArg sexpr
-load args _ = return $ Err $ wrongArgNum args
+    go sexpr = throwE $ wrongArg sexpr
+load args _ = throwE $ wrongArgNum args
 
 toString :: [Sexpr] -> String
 toString = unwords . map show
@@ -309,13 +313,16 @@ lastOrNil :: [Sexpr] -> Sexpr
 lastOrNil [] = Nil
 lastOrNil list = last list
 
-oneArg :: (Sexpr -> Result Sexpr) -> [Sexpr] -> Result Sexpr
+oneArg :: (Sexpr -> Either Error Sexpr) -> [Sexpr] -> Either Error Sexpr
 oneArg f [sexpr] = f sexpr
-oneArg _ args = Err $ wrongArgNum args
+oneArg _ args = Left $ wrongArgNum args
 
-evalEachAnd :: ([Sexpr] -> Result Sexpr) -> [Sexpr] -> Env -> IO (Result Sexpr)
-evalEachAnd f args env =
-  evalEach args env >>>= (return . f)
+evalEachAnd :: ([Sexpr] -> Either Error Sexpr) -> [Sexpr] -> Env -> Result
+evalEachAnd f args env = do
+  result <- liftIO $ runExceptT $ evalEach args env
+  case result of
+    Left msg -> throwE msg
+    Right x -> liftE $ f x
 
 wrongArgNum :: [Sexpr] -> String
 wrongArgNum args = printf "wrong number of arguments: %d" $ length args
