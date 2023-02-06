@@ -257,7 +257,6 @@ toFloat sexpr = Left $ wrongArg sexpr
 
 allEqual :: [Sexpr] -> Bool
 allEqual [] = True
-allEqual [_] = True
 allEqual xs = all (== head xs) (tail xs)
 
 equal :: [Sexpr] -> Env -> Result
