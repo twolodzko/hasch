@@ -33,7 +33,7 @@ root =
       ("car", Func $ evalEachAnd $ oneArg car),
       ("cdr", Func $ evalEachAnd $ oneArg cdr),
       ("cond", Func cond),
-      ("cons", Func cons),
+      ("cons", Func $ evalEachAnd cons),
       ("define", Func define),
       ("display", Func display),
       ("else", Bool True),
@@ -74,16 +74,10 @@ cdr :: Sexpr -> Result Sexpr
 cdr (List list) = Ok $ List $ tail list
 cdr sexpr = Err $ wrongArg sexpr
 
-cons :: [Sexpr] -> Env -> IO (Result Sexpr)
-cons (lhs : [rhs]) env =
-  eval lhs env >>>= \l ->
-    eval rhs env >>>= \r ->
-      return $ Ok $ List (l : list r)
-  where
-    list (List s) = s
-    list s = [s]
-cons args _ =
-  return $ Err $ wrongArgNum args
+cons :: [Sexpr] -> Result Sexpr
+cons (lhs : [List rhs]) = Ok $ List (lhs : rhs)
+cons (lhs : [rhs]) = Ok $ List (lhs : [rhs])
+cons args = Err $ wrongArgNum args
 
 define :: [Sexpr] -> Env -> IO (Result Sexpr)
 define ((Symbol k) : [v]) env =
