@@ -13,7 +13,7 @@ import Eval (eval, evalEach, evalFile)
 import Numbers (NaN)
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-import Types (Error, Result, Sexpr (..), liftE)
+import Types (Error, Result, Sexpr (..))
 
 type Env = EnvRef Sexpr
 
@@ -316,11 +316,11 @@ oneArg f [sexpr] = f sexpr
 oneArg _ args = Left $ wrongArgNum args
 
 evalEachAnd :: ([Sexpr] -> Either Error Sexpr) -> [Sexpr] -> Env -> Result
-evalEachAnd f args env = do
-  result <- liftIO $ runExceptT $ evalEach args env
-  case result of
-    Left msg -> throwE msg
-    Right x -> liftE $ f x
+evalEachAnd f args env =
+  evalEach args env >>= liftE . f
+  where
+    liftE (Right x) = return x
+    liftE (Left msg) = throwE msg
 
 wrongArgNum :: [Sexpr] -> String
 wrongArgNum args = printf "wrong number of arguments: %d" $ length args

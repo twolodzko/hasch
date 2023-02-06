@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module Types (Sexpr (..), Error, Result, liftE) where
+module Types (Sexpr (..), Error, Result) where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT, throwE)
@@ -10,10 +10,6 @@ import Text.Printf (FieldFormatter, PrintfArg, formatArg, printf)
 type Error = String
 
 type Result = ExceptT Error IO Sexpr
-
-liftE :: Either Error Sexpr -> Result
-liftE (Right x) = return x
-liftE (Left msg) = throwE msg
 
 data Sexpr
   = Bool Bool
