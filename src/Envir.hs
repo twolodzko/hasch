@@ -35,9 +35,10 @@ insertToLocal k v env =
   let m = Map.insert k v (local env)
    in env {local = m}
 
-insert :: String -> t -> EnvRef t -> IO ()
-insert k v ref =
+insert :: String -> t -> EnvRef t -> IO t
+insert k v ref = do
   modifyIORef ref $ insertToLocal k v
+  return v
 
 findEnv :: String -> EnvRef t -> IO (Maybe (EnvRef t))
 findEnv k ref = do

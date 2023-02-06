@@ -6,6 +6,7 @@ module Scheme (root) where
 import Control.Exception (evaluate, try)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import Data.Bifunctor (second)
 import Data.List (group)
 import Envir (EnvRef, branch, findEnv, fromList, insert)
 import Eval (eval, evalEach, evalFile)
@@ -17,51 +18,55 @@ import Types (Error, Result, Sexpr (..), liftE)
 type Env = EnvRef Sexpr
 
 root :: IO (EnvRef Sexpr)
-root =
-  Envir.fromList
-    [ ("-", Func $ numReduce (-) (Int 0)),
-      ("*", Func $ numReduce (*) (Int 1)),
-      ("/", Func $ numReduce (/) (Float 1)),
-      ("+", Func $ numReduce (+) (Int 0)),
-      ("<", Func $ numCompare (<)),
-      ("=", Func $ numCompare $ \a b -> compare a b == EQ), -- this is needed so we don't use Eq but Ord
-      (">", Func $ numCompare (>)),
-      ("->integer", Func $ evalEachAnd $ oneArg toInt),
-      ("->float", Func $ evalEachAnd $ oneArg toFloat),
-      ("and", Func $ evalEachAnd $ return . andFn),
-      ("begin", Func $ evalEachAnd $ return . lastOrNil),
-      ("bool?", Func $ evalEachAnd $ oneArg isBool),
-      ("car", Func $ evalEachAnd $ oneArg car),
-      ("cdr", Func $ evalEachAnd $ oneArg cdr),
-      ("cond", Func cond),
-      ("cons", Func $ evalEachAnd cons),
-      ("define", Func define),
-      ("display", Func display),
-      ("else", Bool True),
-      ("eq?", Func equal),
-      ("equal?", Func equal),
-      ("error", Func $ evalEachAnd $ Left . toString),
-      ("eval", Func evalFn),
-      ("float?", Func $ evalEachAnd $ oneArg isFloat),
-      ("if", Func ifFn),
-      ("integer?", Func $ evalEachAnd $ oneArg isInt),
-      ("lambda", Func lambda),
-      ("let", Func letFn),
-      ("let*", Func letStarFn),
-      ("list", Func $ evalEachAnd $ return . List),
-      ("load", Func load),
-      ("not", Func $ evalEachAnd $ oneArg $ return . Bool . not . isTrue),
-      ("null?", Func $ evalEachAnd $ oneArg isNull),
-      ("number?", Func $ evalEachAnd $ oneArg isNumber),
-      ("or", Func $ evalEachAnd $ return . orFn),
-      ("pair?", Func $ evalEachAnd $ oneArg isPair),
-      ("procedure?", Func $ evalEachAnd $ oneArg isProcedure),
-      ("quote", Func quote),
-      ("set!", Func setBang),
-      ("string?", Func $ evalEachAnd $ oneArg isString),
-      ("string", Func $ evalEachAnd $ return . String . toString),
-      ("symbol?", Func $ evalEachAnd $ oneArg isSymbol)
-    ]
+root = do
+  env <-
+    Envir.fromList $
+      map
+        (second Func)
+        [ ("-", numReduce (-) (Int 0)),
+          ("*", numReduce (*) (Int 1)),
+          ("/", numReduce (/) (Float 1)),
+          ("+", numReduce (+) (Int 0)),
+          ("<", numCompare (<)),
+          ("=", numCompare $ \a b -> compare a b == EQ), -- this is needed so we don't use Eq but Ord
+          (">", numCompare (>)),
+          ("->integer", evalEachAnd $ oneArg toInt),
+          ("->float", evalEachAnd $ oneArg toFloat),
+          ("and", evalEachAnd $ return . andFn),
+          ("begin", evalEachAnd $ return . lastOrNil),
+          ("bool?", evalEachAnd $ oneArg isBool),
+          ("car", evalEachAnd $ oneArg car),
+          ("cdr", evalEachAnd $ oneArg cdr),
+          ("cond", cond),
+          ("cons", evalEachAnd cons),
+          ("define", define),
+          ("display", display),
+          ("eq?", equal),
+          ("equal?", equal),
+          ("error", evalEachAnd $ Left . toString),
+          ("eval", evalFn),
+          ("float?", evalEachAnd $ oneArg isFloat),
+          ("if", ifFn),
+          ("integer?", evalEachAnd $ oneArg isInt),
+          ("lambda", lambda),
+          ("let", letFn),
+          ("let*", letStarFn),
+          ("list", evalEachAnd $ return . List),
+          ("load", load),
+          ("not", evalEachAnd $ oneArg $ return . Bool . not . isTrue),
+          ("null?", evalEachAnd $ oneArg isNull),
+          ("number?", evalEachAnd $ oneArg isNumber),
+          ("or", evalEachAnd $ return . orFn),
+          ("pair?", evalEachAnd $ oneArg isPair),
+          ("procedure?", evalEachAnd $ oneArg isProcedure),
+          ("quote", quote),
+          ("set!", setBang),
+          ("string?", evalEachAnd $ oneArg isString),
+          ("string", evalEachAnd $ return . String . toString),
+          ("symbol?", evalEachAnd $ oneArg isSymbol)
+        ]
+  Envir.insert "else" (Bool True) env
+  return env
 
 quote :: [Sexpr] -> Env -> Result
 quote [sexpr] _ = return sexpr
@@ -82,11 +87,8 @@ cons args = Left $ wrongArgNum args
 
 define :: [Sexpr] -> Env -> Result
 define ((Symbol k) : [v]) env =
-  eval v env >>= go
-  where
-    go v = do
-      liftIO $ Envir.insert k v env
-      return v
+  eval v env >>= \v ->
+    liftIO $ Envir.insert k v env
 define (k : [_]) _ =
   throwE $ notASymbol k
 define args _ =
@@ -97,9 +99,8 @@ setBang ((Symbol k) : [v]) env = do
   result <- liftIO $ Envir.findEnv k env
   case result of
     Just env ->
-      eval v env >>= \v -> do
+      eval v env >>= \v ->
         liftIO $ Envir.insert k v env
-        return v
     Nothing -> throwE $ printf "%s was not defined" k
 setBang (k : [_]) _ =
   throwE $ notASymbol k
@@ -152,8 +153,8 @@ letImpl _ _ _ =
 
 letInit :: [Sexpr] -> Env -> EnvRef Sexpr -> Result
 letInit (List (Symbol key : [val]) : xs) evalEnv saveEnv =
-  eval val evalEnv >>= \x -> do
-    liftIO $ Envir.insert key x saveEnv
+  eval val evalEnv >>= \v -> do
+    liftIO $ Envir.insert key v saveEnv
     letInit xs evalEnv saveEnv
 letInit (sexpr : _) _ _ =
   throwE $ notASymbol sexpr
@@ -173,10 +174,8 @@ evalFn [sexpr] env =
 
 ifFn :: [Sexpr] -> Env -> Result
 ifFn (cond : ifTrue : [ifFalse]) env =
-  eval cond env >>= go
-  where
-    go c | isTrue c = eval ifTrue env
-    go _ = eval ifFalse env
+  eval cond env >>= \c ->
+    eval (if isTrue c then ifTrue else ifFalse) env
 ifFn args _ = throwE $ wrongArgNum args
 
 cond :: [Sexpr] -> Env -> Result
