@@ -109,9 +109,7 @@ setBang args _ =
 
 lambda :: [Sexpr] -> Env -> Result
 lambda (List vars : body) parentEnv = do
-  case extractVars vars [] of
-    Right vars -> return $ Func $ go vars
-    Left msg -> throwE msg
+  liftE (extractVars vars [] >>= Right . Func . go)
   where
     go vars args env = do
       local <- liftIO $ Envir.branch parentEnv
@@ -318,9 +316,6 @@ oneArg _ args = Left $ wrongArgNum args
 evalEachAnd :: ([Sexpr] -> Either Error Sexpr) -> [Sexpr] -> Env -> Result
 evalEachAnd f args env =
   evalEach args env >>= liftE . f
-  where
-    liftE (Right x) = return x
-    liftE (Left msg) = throwE msg
 
 wrongArgNum :: [Sexpr] -> String
 wrongArgNum args = printf "wrong number of arguments: %d" $ length args
@@ -334,3 +329,7 @@ notASymbol = printf "%s is not a symbol"
 isTrue :: Sexpr -> Bool
 isTrue (Bool False) = False
 isTrue _ = True
+
+liftE :: Monad m => Either e a -> ExceptT e m a
+liftE (Right x) = return x
+liftE (Left msg) = throwE msg
