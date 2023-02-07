@@ -5,7 +5,7 @@ import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Parser (parse)
 import StringReader (new)
 import Test.HUnit (Test (TestCase), Testable (test), assertEqual)
-import Types (Error, Sexpr (..))
+import Types (Error (..), Sexpr (..))
 
 assertParse :: String -> Either Error (Maybe Sexpr) -> String -> Test
 assertParse desc expected str =
@@ -50,8 +50,8 @@ tests =
         (Right $ Just $ List [Symbol "+", Int 1, Int 2, Int 3])
         "(+ 1 ;; comment A\n 2\n 3 ; comment B  \n\n)",
       -- exceptions
-      assertParse "missing ) error" (Left "missing )") "(+ 2 2",
-      assertParse "missing \" error" (Left "missing \"") "\"hello world!",
-      assertParse "unexpected )" (Left "unexpected )") ") (+ 2 2)",
-      assertParse "missing quoted value" (Left "missing quoted value") "'   "
+      assertParse "missing ) error" (Left $ ParserMissing ")") "(+ 2 2",
+      assertParse "missing \" error" (Left $ ParserMissing "\"") "\"hello world!",
+      assertParse "unexpected )" (Left $ ParserUnexpected ")") ") (+ 2 2)",
+      assertParse "missing quoted value" (Left $ ParserMissing "quoted value") "'   "
     ]

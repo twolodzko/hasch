@@ -4,8 +4,9 @@ import Control.Exception (throw)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import Data.Char (isSpace)
+import Data.Functor ((<&>))
 import Text.Read (readMaybe)
-import Types (Error, Sexpr (..))
+import Types (Error (..), Sexpr (..))
 
 class Reader r where
   peek :: r -> IO (Maybe Char)
@@ -15,24 +16,19 @@ type ParsingResult = ExceptT Error IO (Maybe Sexpr)
 
 parse :: Reader r => r -> ParsingResult
 parse r = do
-  result <- liftIO $ peek r
+  result <- liftIO $ pop r
   case result of
-    Just x | isSpace x -> popAnd r parse
-    Just '(' -> popAnd r $ parseList []
-    Just ')' -> throwE "unexpected )"
-    Just '\'' -> popAnd r parseQuoted
-    Just ',' -> throwE "not implemented"
-    Just '"' -> popAnd r $ parseString ""
+    Just x | isSpace x -> parse r
+    Just '(' -> parseList [] r
+    Just ')' -> throwE $ ParserUnexpected ")"
+    Just '\'' -> parseQuoted r
+    Just ',' -> throwE NotImplemented
+    Just '"' -> parseString "" r
     Just ';' -> do
       liftIO $ skipLine r
       parse r
-    Just _ -> parseWord r
+    Just c -> parseAtom c r
     Nothing -> return Nothing
-
-popAnd :: Reader r => r -> (r -> ParsingResult) -> ParsingResult
-popAnd r f = do
-  liftIO $ pop r
-  f r
 
 parseList :: Reader r => [Sexpr] -> r -> ParsingResult
 parseList acc r = do
@@ -41,16 +37,26 @@ parseList acc r = do
     Just ')' -> do
       liftIO $ pop r
       return $ Just $ List $ reverse acc
-    Just c | isSpace c -> popAnd r $ parseList acc
     Just ';' -> do
       liftIO $ skipLine r
+      parseList acc r
+    Just c | isSpace c -> do
+      liftIO $ pop r
       parseList acc r
     _ -> do
       result <- liftIO $ runExceptT $ parse r
       case result of
         Right (Just sexpr) -> parseList (sexpr : acc) r
-        Right Nothing -> throwE "missing )"
+        Right Nothing -> throwE $ ParserMissing ")"
         Left msg -> throwE msg
+
+parseQuoted :: Reader r => r -> ParsingResult
+parseQuoted r = do
+  result <- liftIO $ runExceptT $ parse r
+  case result of
+    Right (Just sexpr) -> return $ Just $ Quote sexpr
+    Right Nothing -> throwE $ ParserMissing "quoted value"
+    Left err -> throwE err
 
 parseString :: Reader r => String -> r -> ParsingResult
 parseString acc r = do
@@ -58,20 +64,12 @@ parseString acc r = do
   case result of
     Just '"' -> return $ Just $ String $ reverse acc
     Just c -> parseString (c : acc) r
-    Nothing -> throwE "missing \""
+    Nothing -> throwE $ ParserMissing "\""
 
-parseQuoted :: Reader r => r -> ParsingResult
-parseQuoted r = do
-  result <- liftIO $ runExceptT $ parse r
-  case result of
-    Right (Just sexpr) -> return $ Just $ Quote sexpr
-    Right Nothing -> throwE "missing quoted value"
-    Left err -> throwE err
-
-parseWord :: Reader r => r -> ParsingResult
-parseWord r = do
-  result <- liftIO $ readWord r ""
-  return $ maybeTransform [maybeBool, maybeInt, maybeFloat, Just . Symbol] result
+parseAtom :: Reader r => Char -> r -> ParsingResult
+parseAtom init r =
+  liftIO (readWord r [init])
+    <&> maybeTransform [maybeBool, maybeInt, maybeFloat, Just . Symbol]
 
 readWord :: Reader r => r -> String -> IO String
 readWord r acc = do

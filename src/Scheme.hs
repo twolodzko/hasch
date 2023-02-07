@@ -10,10 +10,10 @@ import Data.Bifunctor (second)
 import Data.List (group)
 import Envir (EnvRef, branch, findEnv, fromList, insert)
 import Eval (eval, evalEach, evalFile)
-import Numbers (NaN)
+import Numbers ()
 import Text.Printf (printf)
 import Text.Read (readMaybe)
-import Types (Error, Result, Sexpr (..))
+import Types (Error (..), Result, Sexpr (..))
 
 type Env = EnvRef Sexpr
 
@@ -43,7 +43,7 @@ root = do
           ("display", display),
           ("eq?", equal),
           ("equal?", equal),
-          ("error", evalEachAnd $ Left . toString),
+          ("error", evalEachAnd $ Left . CustomErr . toString),
           ("eval", evalFn),
           ("float?", evalEachAnd $ oneArg isFloat),
           ("if", ifFn),
@@ -74,11 +74,11 @@ quote args _ = throwE $ wrongArgNum args
 
 car :: Sexpr -> Either Error Sexpr
 car (List list) = Right $ head list
-car sexpr = Left $ wrongArg sexpr
+car sexpr = Left $ WrongArg sexpr
 
 cdr :: Sexpr -> Either Error Sexpr
 cdr (List list) = Right $ List $ tail list
-cdr sexpr = Left $ wrongArg sexpr
+cdr sexpr = Left $ WrongArg sexpr
 
 cons :: [Sexpr] -> Either Error Sexpr
 cons (lhs : [List rhs]) = Right $ List (lhs : rhs)
@@ -90,7 +90,7 @@ define ((Symbol k) : [v]) env =
   eval v env >>= \v ->
     liftIO $ Envir.insert k v env
 define (k : [_]) _ =
-  throwE $ notASymbol k
+  throwE $ NotASymbol k
 define args _ =
   throwE $ wrongArgNum args
 
@@ -101,9 +101,9 @@ setBang ((Symbol k) : [v]) env = do
     Just env ->
       eval v env >>= \v ->
         liftIO $ Envir.insert k v env
-    Nothing -> throwE $ printf "%s was not defined" k
+    Nothing -> throwE $ Undefined k
 setBang (k : [_]) _ =
-  throwE $ notASymbol k
+  throwE $ NotASymbol k
 setBang args _ =
   throwE $ wrongArgNum args
 
@@ -115,13 +115,13 @@ lambda (List vars : body) parentEnv = do
       local <- liftIO $ Envir.branch parentEnv
       lambdaInit vars args env local
       evalEachAnd (return . lastOrNil) body local
-lambda (sexpr : _) _ = throwE $ wrongArg sexpr
+lambda (sexpr : _) _ = throwE $ WrongArg sexpr
 lambda args _ = throwE $ wrongArgNum args
 
 extractVars :: [Sexpr] -> [String] -> Either Error [String]
 extractVars (Symbol x : xs) acc = extractVars xs (x : acc)
 extractVars [] acc = Right $ reverse acc
-extractVars (sexpr : _) _ = Left $ notASymbol sexpr
+extractVars (sexpr : _) _ = Left $ NotASymbol sexpr
 
 lambdaInit :: [String] -> [Sexpr] -> Env -> EnvRef Sexpr -> Result
 lambdaInit (v : vars) (a : args) evalEnv saveEnv =
@@ -141,21 +141,23 @@ letStarFn args env = do
   letImpl args local local
 
 letImpl :: [Sexpr] -> Env -> Env -> Result
-letImpl (List list : body) evalEnv saveEnv =
+letImpl (List list : body) evalEnv saveEnv = do
   letInit list evalEnv saveEnv
-    >> (evalEachAnd $ return . lastOrNil) body saveEnv
+  (evalEachAnd $ return . lastOrNil) body saveEnv
 letImpl (sexpr : _) _ _ =
-  throwE $ wrongArg sexpr
+  throwE $ WrongArg sexpr
 letImpl _ _ _ =
-  throwE "invalid arguments"
+  throwE InvalidArgs
 
 letInit :: [Sexpr] -> Env -> EnvRef Sexpr -> Result
 letInit (List (Symbol key : [val]) : xs) evalEnv saveEnv =
   eval val evalEnv >>= \v -> do
     liftIO $ Envir.insert key v saveEnv
     letInit xs evalEnv saveEnv
+letInit (List (key : _) : _) _ _ =
+  throwE $ NotASymbol key
 letInit (sexpr : _) _ _ =
-  throwE $ notASymbol sexpr
+  throwE $ WrongArg sexpr
 letInit [] _ _ =
   return Nil
 
@@ -185,7 +187,7 @@ cond ((List (condition : body)) : xs) env =
         [] -> return s
         body -> (evalEachAnd $ return . last) body env
     go s = cond xs env
-cond (sexpr : _) _ = throwE $ wrongArg sexpr
+cond (sexpr : _) _ = throwE $ WrongArg sexpr
 cond [] _ = return Nil
 
 andFn :: [Sexpr] -> Sexpr
@@ -243,8 +245,8 @@ toInt (Int num) = return $ Int num
 toInt (String str) =
   case (readMaybe str :: Maybe Int) of
     Just num -> return $ Int num
-    Nothing -> Left $ printf "cannot parse: %s" str
-toInt sexpr = Left $ wrongArg sexpr
+    Nothing -> Left $ CannotParse str
+toInt sexpr = Left $ WrongArg sexpr
 
 toFloat :: Sexpr -> Either Error Sexpr
 toFloat (Int num) = return $ Float $ fromIntegral num
@@ -252,8 +254,8 @@ toFloat (Float num) = return $ Float num
 toFloat (String str) =
   case (readMaybe str :: Maybe Float) of
     Just num -> return $ Float num
-    Nothing -> Left $ printf "cannot parse: %s" str
-toFloat sexpr = Left $ wrongArg sexpr
+    Nothing -> Left $ CannotParse str
+toFloat sexpr = Left $ WrongArg sexpr
 
 allEqual :: [Sexpr] -> Bool
 allEqual [] = True
@@ -271,9 +273,9 @@ numReduce op _ (x : xs) env =
 numReduceImpl :: (Sexpr -> Sexpr -> Sexpr) -> [Sexpr] -> Env -> Sexpr -> Result
 numReduceImpl op (x : xs) env acc =
   eval x env >>= \v -> do
-    result <- liftIO (try (evaluate $ op acc v) :: IO (Either NaN Sexpr))
+    result <- liftIO (try (evaluate $ op acc v) :: IO (Either Error Sexpr))
     case result of
-      Left msg -> throwE $ show msg
+      Left err -> throwE err
       Right new -> numReduceImpl op xs env new
 numReduceImpl _ [] _ acc = return acc
 
@@ -286,9 +288,9 @@ numCompare op (x : xs) env =
   where
     go (x : xs) acc =
       eval x env >>= \v -> do
-        result <- liftIO (try (evaluate $ op acc v) :: IO (Either NaN Bool))
+        result <- liftIO (try (evaluate $ op acc v) :: IO (Either Error Bool))
         case result of
-          Left msg -> throwE $ show msg
+          Left err -> throwE err
           Right True -> go xs v
           Right False -> return $ Bool False
     go [] acc = return $ Bool True
@@ -298,7 +300,7 @@ load [arg] env =
   eval arg env >>= go
   where
     go (String name) = evalFile name env
-    go sexpr = throwE $ wrongArg sexpr
+    go sexpr = throwE $ WrongArg sexpr
 load args _ = throwE $ wrongArgNum args
 
 toString :: [Sexpr] -> String
@@ -316,15 +318,6 @@ evalEachAnd :: ([Sexpr] -> Either Error Sexpr) -> [Sexpr] -> Env -> Result
 evalEachAnd f args env =
   evalEach args env >>= liftE . f
 
-wrongArgNum :: [Sexpr] -> String
-wrongArgNum args = printf "wrong number of arguments: %d" $ length args
-
-wrongArg :: Sexpr -> String
-wrongArg = printf "invalid argument: %s"
-
-notASymbol :: Sexpr -> String
-notASymbol = printf "%s is not a symbol"
-
 isTrue :: Sexpr -> Bool
 isTrue (Bool False) = False
 isTrue _ = True
@@ -332,3 +325,6 @@ isTrue _ = True
 liftE :: Monad m => Either e a -> ExceptT e m a
 liftE (Right x) = return x
 liftE (Left msg) = throwE msg
+
+wrongArgNum :: Foldable t => t a -> Error
+wrongArgNum = WrongArgNum . length

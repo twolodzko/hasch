@@ -1,13 +1,13 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module Types (Sexpr (..), Error, Result) where
+module Types (Sexpr (..), Error (..), Result, printErr) where
 
+import Control.Exception (Exception)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT, throwE)
+import Data.List (intercalate)
 import Envir (EnvRef)
 import Text.Printf (FieldFormatter, PrintfArg, formatArg, printf)
-
-type Error = String
 
 type Result = ExceptT Error IO Sexpr
 
@@ -50,3 +50,47 @@ instance Eq Sexpr where
   (==) (List a) (List b) = a == b
   (==) Nil Nil = True
   (==) _ _ = False
+
+data Error
+  = WrongArg Sexpr
+  | NotASymbol Sexpr
+  | NotANumber Sexpr
+  | CannotParse String
+  | WrongArgNum Int
+  | InvalidArgs
+  | Undefined String
+  | NotCallable Sexpr
+  | ParserUnexpected String
+  | ParserMissing String
+  | NotImplemented
+  | CustomErr String
+  | Traceback [Sexpr] Error
+  deriving (Eq)
+
+instance Exception Error
+
+instance Show Error where
+  show :: Error -> String
+  show (WrongArg s) = printf "invalid argument: %s" s
+  show (NotASymbol s) = printf "%s is not a symbol" s
+  show (NotANumber s) = printf "%s is not a number" s
+  show (CannotParse s) = printf "cannot parse: %s" s
+  show (WrongArgNum n) = printf "wrong number of arguments: %d" n
+  show InvalidArgs = "invalid arguments"
+  show (Undefined s) = printf "%s was not defined" s
+  show (NotCallable s) = printf "%s is not callable" s
+  show (ParserUnexpected s) = printf "unexpected '%s'" s
+  show (ParserMissing s) = printf "missing '%s'" s
+  show NotImplemented = "not implemented"
+  show (CustomErr s) = s
+  show (Traceback trace err) =
+    let elems = "Traceback:" : map show trace ++ ["Error:"]
+     in printf "%s %s" (intercalate " \n ↪ " elems) err
+
+instance PrintfArg Error where
+  formatArg :: Error -> FieldFormatter
+  formatArg msg = formatArg (show msg)
+
+printErr :: Error -> IO ()
+printErr err@(Traceback _ _) = printf "%s\n" $ show err
+printErr err = printf "Error: %s\n" err

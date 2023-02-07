@@ -3,7 +3,7 @@ module SchemeTest where
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (runExceptT, throwE)
 import Data.Either (isLeft)
-import Data.Maybe (isJust, isNothing)
+import Data.Maybe (isNothing)
 import Envir (EnvRef, branch, insert, lookup)
 import Eval (eval, evalFile)
 import Parser (parse)
@@ -13,12 +13,10 @@ import Test.HUnit
   ( Assertable (assert),
     Test (TestCase),
     Testable (test),
-    assertBool,
     assertEqual,
   )
 import Text.Printf (printf)
-import Text.Regex
-import Types (Result, Sexpr (..))
+import Types (Error (..), Result, Sexpr (..))
 
 parseEval :: String -> Envir.EnvRef Sexpr -> Result
 parseEval str env = do
@@ -40,19 +38,16 @@ assertEvalEqual expected str =
           result
     )
 
-assertEvalThrows :: String -> String -> Test
-assertEvalThrows err str =
+assertEvalThrows :: Error -> String -> Test
+assertEvalThrows expected str =
   TestCase
     ( do
         env <- liftIO root
         result <- liftIO $ runExceptT $ parseEval str env
         case result of
           Right _ -> error "didn't raise error"
-          Left msg ->
-            assertBool
-              (printf "expecting error '%s' for: %s" err str)
-              $ isJust
-              $ matchRegex (mkRegex $ err ++ "$") msg
+          Left (Traceback _ err) -> assertEqual "should throw error" expected err
+          Left err -> assertEqual "should throw error" expected err
     )
 
 setBangTest :: Test
@@ -117,21 +112,21 @@ tests =
   test
     [ -- begin
       assertEvalEqual (Int 3) "(begin (car '(1 2 3)) (car '(3 4 5)))",
-      assertEvalThrows "expected" "(begin (+ 2 2) (error 'expected) (+ 1 2 3))",
+      assertEvalThrows (CustomErr "expected") "(begin (+ 2 2) (error 'expected) (+ 1 2 3))",
       -- car
       assertEvalEqual (Int 1) "(car '(1 2 3))",
       assertEvalEqual (Int 1) "(car (list 1 2 3))",
-      assertEvalThrows "wrong number of arguments: 0" "(car)",
-      assertEvalThrows "wrong number of arguments: 2" "(car '(1 2 3) '(4 5 6))",
+      assertEvalThrows (WrongArgNum 0) "(car)",
+      assertEvalThrows (WrongArgNum 2) "(car '(1 2 3) '(4 5 6))",
       -- cdr
       assertEvalEqual (List [Int 2, Int 3]) "(cdr '(1 2 3))",
       assertEvalEqual (List [Int 2, Int 3]) "(cdr (list 1 2 3))",
-      assertEvalThrows "wrong number of arguments: 0" "(cdr)",
-      assertEvalThrows "wrong number of arguments: 2" "(cdr '(1 2 3) '(4 5 6))",
+      assertEvalThrows (WrongArgNum 0) "(cdr)",
+      assertEvalThrows (WrongArgNum 2) "(cdr '(1 2 3) '(4 5 6))",
       -- cons
-      assertEvalThrows "wrong number of arguments: 0" "(cons)",
-      assertEvalThrows "wrong number of arguments: 1" "(cons 1)",
-      assertEvalThrows "wrong number of arguments: 3" "(cons 1 '() '())",
+      assertEvalThrows (WrongArgNum 0) "(cons)",
+      assertEvalThrows (WrongArgNum 1) "(cons 1)",
+      assertEvalThrows (WrongArgNum 3) "(cons 1 '() '())",
       assertEvalEqual (List [Int 1]) "(cons 1 '())",
       assertEvalEqual (List [Int 1, Int 2]) "(cons 1 '(2))",
       assertEvalEqual (List [Int 1, Int 2]) "(cons 1 (list 2))",
@@ -141,17 +136,17 @@ tests =
       assertEvalEqual Nil "((lambda ()))",
       assertEvalEqual (Symbol "ok") "((lambda (x) x) 'ok)",
       assertEvalEqual (Int 6) "((lambda (x y z) (+ x y z)) 1 2 3)",
-      assertEvalThrows "wrong number of arguments: 0" "(lambda)",
-      assertEvalThrows "invalid argument: x" "(lambda x (+ x 1))",
-      assertEvalThrows "#t is not a symbol" "(lambda (x #t z) (+ x z))",
+      assertEvalThrows (WrongArgNum 0) "(lambda)",
+      assertEvalThrows (WrongArg $ Symbol "x") "(lambda x (+ x 1))",
+      assertEvalThrows (NotASymbol $ Bool True) "(lambda (x #t z) (+ x z))",
       -- let, let*
       assertEvalEqual (Symbol "ok") "(let () 'ok)",
       assertEvalEqual (Int 3) "(let ((x 1) (y 2)) (+ x y))",
       assertEvalEqual (Int 4) "(let ((x 1) (y 2)) (+ x y) (* y y))",
       assertEvalEqual (Int 2) "(let ((x 1)) (let ((y x)) (+ x y)))",
-      assertEvalThrows "invalid argument: 'wat" "(let 'wat '())",
-      assertEvalThrows "y is not a symbol" "(let ((x 1) y 2) (+ x y))",
-      assertEvalThrows "x was not found" "(let ((x 1) (y (+ x 1))) (+ x y))",
+      assertEvalThrows (WrongArg $ Quote $ Symbol "wat") "(let 'wat '())",
+      assertEvalThrows (WrongArg $ Symbol "y") "(let ((x 1) y 2) (+ x y))",
+      assertEvalThrows (Undefined "x") "(let ((x 1) (y (+ x 1))) (+ x y))",
       assertEvalEqual (Symbol "ok") "(let* () 'ok)",
       assertEvalEqual (Int 3) "(let* ((x 1) (y 2)) (+ x y))",
       assertEvalEqual (Int 4) "(let* ((x 1) (y 2)) (+ x y) (* y y))",
@@ -210,7 +205,7 @@ tests =
       assertEvalEqual Nil "(cond (#f 1) (#f 2) (#f 3))",
       assertEvalEqual (Int 2) "(cond (#f) (2) (#t (error 'wrong)))",
       assertEvalEqual (Int 4) "(cond (#f (error 'wrong)) (#t (+ 2 2)))",
-      assertEvalThrows "invalid argument: #t" "(cond #t)",
+      assertEvalThrows (WrongArg $ Bool True) "(cond #t)",
       -- equal? eq?
       assertEvalEqual (Bool True) "(equal?)",
       assertEvalEqual (Bool True) "(equal? 1)",
@@ -222,12 +217,12 @@ tests =
       assertEvalEqual (String "") "(string)",
       assertEvalEqual (String "1 #t foo") "(string 1 #t 'foo)",
       -- error
-      assertEvalThrows "" "(error)",
-      assertEvalThrows "1 #t foo" "(error 1 #t 'foo)",
+      assertEvalThrows (CustomErr "") "(error)",
+      assertEvalThrows (CustomErr "1 #t foo") "(error 1 #t 'foo)",
       -- quote
       assertEvalEqual (Symbol "foo") "(quote foo)",
-      assertEvalThrows "wrong number of arguments: 0" "(quote)",
-      assertEvalThrows "wrong number of arguments: 3" "(quote foo bar baz)",
+      assertEvalThrows (WrongArgNum 0) "(quote)",
+      assertEvalThrows (WrongArgNum 3) "(quote foo bar baz)",
       -- string?
       assertEvalEqual (Bool True) "(string? \"\")",
       assertEvalEqual (Bool True) "(string? \"hello\")",
@@ -298,7 +293,7 @@ tests =
       assertEvalEqual (Bool True) "(= 1 1 1)",
       assertEvalEqual (Bool True) "(= 1 1 1.0)",
       assertEvalEqual (Bool False) "(= 1 1 (+ 2 2))",
-      assertEvalThrows "operation cannot be applied to 1 and #t" "(= 1 #t)",
+      assertEvalThrows (NotANumber $ Bool True) "(= 1 #t)",
       assertEvalEqual (Bool True) "(>)",
       assertEvalEqual (Bool True) "(> 1)",
       assertEvalEqual (Bool True) "(> 3 2 1)",

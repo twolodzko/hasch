@@ -7,7 +7,7 @@ import Eval (eval)
 import Parser (parse)
 import StringReader (new)
 import Test.HUnit (Test (TestCase), Testable (test), assertEqual)
-import Types (Error, Result, Sexpr (..))
+import Types (Error (..), Result, Sexpr (..))
 
 parseEval :: String -> Result
 parseEval str = do
@@ -43,7 +43,7 @@ testMissingSymbol =
         env <- liftIO Envir.new
         liftIO (Envir.insert "foo" (Int 42) env)
         result <- liftIO $ runExceptT $ eval (Symbol "bar") env
-        assertEqual "evaluate symbol that doesn't exist" (Left "bar was not found") result
+        assertEqual "evaluate symbol that doesn't exist" (Left $ Undefined "bar") result
     )
 
 tests :: Test

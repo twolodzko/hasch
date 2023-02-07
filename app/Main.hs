@@ -9,7 +9,7 @@ import Scheme (root)
 import StdinReader (new)
 import System.Environment (getArgs)
 import Text.Printf (printf)
-import Types (Sexpr)
+import Types (Sexpr, printErr)
 
 main :: IO ()
 main = do
@@ -29,5 +29,5 @@ evalFiles (x : xs) env = do
   result <- liftIO $ runExceptT $ Eval.evalFile x env
   case result of
     Right _ -> evalFiles xs env
-    Left msg -> printf "Error: %s\n" msg
+    Left msg -> printErr msg
 evalFiles [] _ = return ()

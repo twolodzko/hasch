@@ -6,7 +6,7 @@ import Envir (EnvRef, lookup)
 import FileReader (new)
 import Parser (parse)
 import Text.Printf (printf)
-import Types (Error, Result, Sexpr (..))
+import Types (Error (..), Result, Sexpr (..))
 
 type Env = EnvRef Sexpr
 
@@ -15,7 +15,7 @@ eval (Symbol name) env = do
   result <- liftIO $ Envir.lookup name env
   case result of
     Just val -> return val
-    Nothing -> throwE $ printf "%s was not found" name
+    Nothing -> throwE $ Undefined name
 eval (Quote sexpr) _ =
   return sexpr
 eval (List list) env = do
@@ -35,7 +35,7 @@ evalList (x : xs) env = do
     Right (Func f) ->
       f xs env
     Right sexpr ->
-      throwE $ printf "%s is not callable" sexpr
+      throwE $ NotCallable sexpr
     Left msg ->
       throwE msg
 
@@ -62,6 +62,8 @@ evalFile name env = do
         Right Nothing -> return prev
         Left msg -> throwE msg
 
-withTraceback :: String -> [Sexpr] -> Result
-withTraceback msg caller =
-  throwE $ printf "%s \n ↪ %s" (List caller) msg
+withTraceback :: Error -> [Sexpr] -> Result
+withTraceback (Traceback trace err) caller =
+  throwE $ Traceback (List caller : trace) err
+withTraceback err caller =
+  throwE $ Traceback [List caller] err

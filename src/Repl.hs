@@ -6,7 +6,7 @@ import Eval (eval)
 import Parser (parse)
 import StdinReader (StdinReader)
 import Text.Printf (printf)
-import Types (Sexpr)
+import Types (Error (..), Sexpr, printErr)
 
 type Env = EnvRef Sexpr
 
@@ -29,6 +29,3 @@ evalAndPrint sexpr env = do
   case result of
     Right sexpr -> print sexpr
     Left msg -> printErr msg
-
-printErr :: String -> IO ()
-printErr = printf "Error: %s\n"

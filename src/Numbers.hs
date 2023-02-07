@@ -2,17 +2,9 @@
 
 module Numbers where
 
-import Control.Exception (Exception, throw)
+import Control.Exception (throw)
 import Text.Printf (printf)
-import Types (Sexpr (Float, Int))
-
-newtype NaN = NaN (Sexpr, Sexpr)
-
-instance Exception NaN
-
-instance Show NaN where
-  show :: NaN -> String
-  show (NaN (a, b)) = printf "operation cannot be applied to %s and %s" a b
+import Types (Error (NotANumber), Sexpr (Float, Int))
 
 instance Num Sexpr where
   negate :: Sexpr -> Sexpr
@@ -24,28 +16,28 @@ instance Num Sexpr where
   (+) (Int a) (Float b) = Float (fromIntegral a + b)
   (+) (Float a) (Int b) = Float (a + fromIntegral b)
   (+) (Float a) (Float b) = Float (a + b)
-  (+) a b = throw $ NaN (a, b)
+  (+) a b = throw $ errNaN a b
 
   (-) :: Sexpr -> Sexpr -> Sexpr
   (-) (Int a) (Int b) = Int (a - b)
   (-) (Int a) (Float b) = Float (fromIntegral a - b)
   (-) (Float a) (Int b) = Float (a - fromIntegral b)
   (-) (Float a) (Float b) = Float (a - b)
-  (-) a b = throw $ NaN (a, b)
+  (-) a b = throw $ errNaN a b
 
   (*) :: Sexpr -> Sexpr -> Sexpr
   (*) (Int a) (Int b) = Int (a * b)
   (*) (Int a) (Float b) = Float (fromIntegral a * b)
   (*) (Float a) (Int b) = Float (a * fromIntegral b)
   (*) (Float a) (Float b) = Float (a * b)
-  (*) a b = throw $ NaN (a, b)
+  (*) a b = throw $ errNaN a b
 
   abs :: Sexpr -> Sexpr
-  abs _ = error "undefined"
+  abs _ = undefined
   signum :: Sexpr -> Sexpr
-  signum _ = error "undefined"
+  signum _ = undefined
   fromInteger :: Integer -> Sexpr
-  fromInteger _ = error "undefined"
+  fromInteger _ = undefined
 
 instance Fractional Sexpr where
   (/) :: Sexpr -> Sexpr -> Sexpr
@@ -53,10 +45,10 @@ instance Fractional Sexpr where
   (/) (Int a) (Float b) = Float (fromIntegral a / b)
   (/) (Float a) (Int b) = Float (a / fromIntegral b)
   (/) (Float a) (Float b) = Float (a / b)
-  (/) a b = throw $ NaN (a, b)
+  (/) a b = throw $ errNaN a b
 
   fromRational :: Rational -> Sexpr
-  fromRational _ = error "undefined"
+  fromRational _ = undefined
 
 instance Ord Sexpr where
   compare :: Sexpr -> Sexpr -> Ordering
@@ -64,4 +56,11 @@ instance Ord Sexpr where
   compare (Int a) (Float b) = compare (fromIntegral a) b
   compare (Float a) (Int b) = compare a (fromIntegral b)
   compare (Float a) (Float b) = compare a b
-  compare a b = throw $ NaN (a, b)
+  compare a b = throw $ errNaN a b
+
+errNaN :: Sexpr -> Sexpr -> Error
+errNaN (Int _) b = NotANumber b
+errNaN (Float _) b = NotANumber b
+errNaN a (Int _) = NotANumber a
+errNaN a (Float _) = NotANumber a
+errNaN a _ = NotANumber a
