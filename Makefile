@@ -1,4 +1,7 @@
 
+.PHONY: build
+build: hasch
+
 hasch: src/* app/*
 	@ cabal install \
 		--ghc \
@@ -38,8 +41,9 @@ lines:
 
 .PHONY: clean
 clean:
+	rm -f ./hasch
+	rm -rf dist-newstyle
 	rm -rf dist
-	rm -rf hasch
 	cabal clean
 
 .PHONY: repl
