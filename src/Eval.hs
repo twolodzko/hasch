@@ -1,4 +1,4 @@
-module Eval (eval, evalEach, evalFile) where
+module Eval (eval, evalFile) where
 
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
@@ -16,13 +16,13 @@ eval (Symbol name) env = do
   case result of
     Just val -> return val
     Nothing -> throwE $ Undefined name
-eval (Quote sexpr) _ =
-  return sexpr
 eval (List list) env = do
   result <- liftIO $ runExceptT $ evalList list env
   case result of
     Right val -> return val
     Left msg -> withTraceback msg list
+eval (Quote sexpr) _ =
+  return sexpr
 eval sexpr _ =
   return sexpr
 
@@ -38,16 +38,6 @@ evalList (x : xs) env = do
       throwE $ NotCallable sexpr
     Left msg ->
       throwE msg
-
-evalEach :: [Sexpr] -> Env -> ExceptT Error IO [Sexpr]
-evalEach args env =
-  go args []
-  where
-    go (x : xs) acc =
-      eval x env >>= \v ->
-        go xs (v : acc)
-    go [] acc =
-      return $ reverse acc
 
 evalFile :: String -> Env -> Result
 evalFile name env = do

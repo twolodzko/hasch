@@ -9,7 +9,7 @@ import Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import Data.Bifunctor (second)
 import Data.List (group)
 import Envir (EnvRef, branch, findEnv, fromList, insert)
-import Eval (eval, evalEach, evalFile)
+import Eval (eval, evalFile)
 import Numbers ()
 import Text.Printf (printf)
 import Text.Read (readMaybe)
@@ -163,7 +163,7 @@ letInit [] _ _ =
 
 display :: [Sexpr] -> Env -> Result
 display args env =
-  evalEach args env >>= \x -> do
+  evalEach args env [] >>= \x -> do
     liftIO $ printf "%s\n" $ toString x
     return Nil
 
@@ -314,9 +314,16 @@ oneArg :: (Sexpr -> Either Error Sexpr) -> [Sexpr] -> Either Error Sexpr
 oneArg f [sexpr] = f sexpr
 oneArg _ args = Left $ wrongArgNum args
 
+evalEach :: [Sexpr] -> Env -> [Sexpr] -> ExceptT Error IO [Sexpr]
+evalEach (x : xs) env acc =
+  eval x env >>= \v ->
+    evalEach xs env (v : acc)
+evalEach [] _ acc =
+  return $ reverse acc
+
 evalEachAnd :: ([Sexpr] -> Either Error Sexpr) -> [Sexpr] -> Env -> Result
 evalEachAnd f args env =
-  evalEach args env >>= liftE . f
+  evalEach args env [] >>= liftE . f
 
 isTrue :: Sexpr -> Bool
 isTrue (Bool False) = False

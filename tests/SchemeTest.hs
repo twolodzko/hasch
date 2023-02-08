@@ -112,6 +112,7 @@ tests =
   test
     [ -- begin
       assertEvalEqual (Int 3) "(begin (car '(1 2 3)) (car '(3 4 5)))",
+      assertEvalEqual (Int 6) "(begin (define x 5) (+ x 1))",
       assertEvalThrows (CustomErr "expected") "(begin (+ 2 2) (error 'expected) (+ 1 2 3))",
       -- car
       assertEvalEqual (Int 1) "(car '(1 2 3))",
