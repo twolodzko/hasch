@@ -30,15 +30,14 @@ lookup k ref = do
     (Nothing, Nothing) -> return Nothing
     (v, _) -> return v
 
-insertToLocal :: String -> t -> LocalEnv t -> LocalEnv t
-insertToLocal k v env =
-  let m = Map.insert k v (local env)
-   in env {local = m}
-
 insert :: String -> t -> EnvRef t -> IO t
 insert k v ref = do
-  modifyIORef ref $ insertToLocal k v
+  modifyIORef ref go
   return v
+  where
+    go env =
+      let m = Map.insert k v (local env)
+       in env {local = m}
 
 findEnv :: String -> EnvRef t -> IO (Maybe (EnvRef t))
 findEnv k ref = do
