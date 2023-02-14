@@ -30,13 +30,13 @@ root = do
           ("<", numCompare (<)),
           ("=", numCompare $ \a b -> compare a b == EQ), -- this is needed so we don't use Eq but Ord
           (">", numCompare (>)),
-          ("->integer", evalEachAnd $ oneArg toInt),
-          ("->float", evalEachAnd $ oneArg toFloat),
+          ("->integer", evalOneAnd toInt),
+          ("->float", evalOneAnd toFloat),
           ("and", evalEachAnd $ return . andFn),
           ("begin", evalEachAnd $ return . lastOrNil),
-          ("bool?", evalEachAnd $ oneArg isBool),
-          ("car", evalEachAnd $ oneArg car),
-          ("cdr", evalEachAnd $ oneArg cdr),
+          ("bool?", evalOneAnd isBool),
+          ("car", evalOneAnd car),
+          ("cdr", evalOneAnd cdr),
           ("cond", cond),
           ("cons", evalEachAnd cons),
           ("define", define),
@@ -45,25 +45,25 @@ root = do
           ("equal?", equal),
           ("error", evalEachAnd $ Left . CustomErr . toString),
           ("eval", evalFn),
-          ("float?", evalEachAnd $ oneArg isFloat),
+          ("float?", evalOneAnd isFloat),
           ("if", ifFn),
-          ("integer?", evalEachAnd $ oneArg isInt),
+          ("integer?", evalOneAnd isInt),
           ("lambda", lambda),
           ("let", letFn),
           ("let*", letStarFn),
           ("list", evalEachAnd $ return . List),
           ("load", load),
-          ("not", evalEachAnd $ oneArg $ return . Bool . not . isTrue),
-          ("null?", evalEachAnd $ oneArg isNull),
-          ("number?", evalEachAnd $ oneArg isNumber),
+          ("not", evalOneAnd $ return . Bool . not . isTrue),
+          ("null?", evalOneAnd isNull),
+          ("number?", evalOneAnd isNumber),
           ("or", evalEachAnd $ return . orFn),
-          ("pair?", evalEachAnd $ oneArg isPair),
-          ("procedure?", evalEachAnd $ oneArg isProcedure),
+          ("pair?", evalOneAnd isPair),
+          ("procedure?", evalOneAnd isProcedure),
           ("quote", quote),
           ("set!", setBang),
-          ("string?", evalEachAnd $ oneArg isString),
+          ("string?", evalOneAnd isString),
           ("string", evalEachAnd $ return . String . toString),
-          ("symbol?", evalEachAnd $ oneArg isSymbol)
+          ("symbol?", evalOneAnd isSymbol)
         ]
   Envir.insert "else" (Bool True) env
   return env
@@ -310,9 +310,11 @@ lastOrNil :: [Sexpr] -> Sexpr
 lastOrNil [] = Nil
 lastOrNil list = last list
 
-oneArg :: (Sexpr -> Either Error Sexpr) -> [Sexpr] -> Either Error Sexpr
-oneArg f [sexpr] = f sexpr
-oneArg _ args = Left $ wrongArgNum args
+evalOneAnd :: (Sexpr -> Either Error Sexpr) -> [Sexpr] -> Env -> Result
+evalOneAnd f [sexpr] env =
+  eval sexpr env >>= liftE . f
+evalOneAnd _ args _ =
+  throwE $ wrongArgNum args
 
 evalEach :: [Sexpr] -> Env -> [Sexpr] -> ExceptT Error IO [Sexpr]
 evalEach (x : xs) env acc =
